@@ -1,6 +1,8 @@
 name: macOS build
 
-on: [push]
+on:
+  - push
+  - workflow_dispatch
 
 jobs:
   build:
@@ -16,9 +18,9 @@ jobs:
         brew install llvm-hs/llvm/llvm-12
         cp /usr/local/Cellar/llvm-12/12_2/lib/llvm-12/lib/libc++abi.1.dylib /usr/local/lib
         echo WX `which wx-config`
-        brew install wxwidgets@3.0
-        ln -s `which wx-config-3.0` $(dirname `which wx-config-3.0`)/wx-config
-        ln -s `which wxrc-3.0` $(dirname `which wxrc-3.0`)/wxrc
+        brew install wxwidgets@3.2
+        ln -s `which wx-config-3.2` $(dirname `which wx-config-3.2`)/wx-config
+        ln -s `which wxrc-3.2` $(dirname `which wxrc-3.2`)/wxrc
         ln -s /usr/local/Cellar/wxwidgets/3.2.2.1_1/lib/wx /usr/local/lib/wx
         echo `which wx-config`
         wx-config --list
