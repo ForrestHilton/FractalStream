@@ -36,14 +36,15 @@ import Data.Word
 import Foreign.Storable
 import Foreign.Ptr
 
+-- | @Color@ represents 24-bit colors, with 8 bits per R//G//B channel.
 data Color = Color Word8 Word8 Word8
   deriving (Eq, Ord, Show)
 
--- | Extract the red/green/blue channels from a color
+-- | Extract the red//green//blue channels from a color
 colorToRGB :: Color -> (Word8, Word8, Word8)
 colorToRGB (Color r g b) = (r, g, b)
 
--- | Construct a color from its red/green/blue channels
+-- | Construct a color from its red//green//blue channels
 rgbToColor :: (Word8, Word8, Word8) -> Color
 rgbToColor (r,g,b) = Color r g b
 
@@ -107,11 +108,6 @@ darkenBy p c = rgbToColor (shade r, shade g, shade b)
     where (r,g,b) = colorToRGB c
           shade x = let x' = fromIntegral x in round $ x' - p * x'
 
-{-
--- | Make a transparent color
-clear :: Color -> Color
-clear c = rgba r g b 128 where (r,g,b) = colorToRGB c
--}
 
 -- | Blend two colors
 mixColors :: Double  -- ^ The ratio to take from the first color

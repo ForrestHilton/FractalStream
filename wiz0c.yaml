@@ -17,7 +17,7 @@ viewers:
           black
         else
           init c1 : Color to if im(z) > 0 then upper_color else lower_color
-          init c2 : Color to if im(z) > 0 then other_upper_color else other_lower_color
+          init c2 : Color to if imX(z) > 0 then other_upper_color else other_lower_color
           init s : R to k + 1 - (log (log (|z|^2) / 2 log(maxRadius))) / log p
           blend ((cos (s pi / 10))^2, c1, c2)
     tools:

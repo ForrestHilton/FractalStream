@@ -130,6 +130,7 @@ fromEnvironmentM env0 f = go env0
       EmptyEnvProxy        -> pure []
       BindingProxy n t env -> (:) <$> f n t <*> go env
 
+-- | Add a new variable declaration onto the environment
 declare :: forall name ty env
          . (KnownSymbol name, NotPresent name env)
         => TypeProxy ty
@@ -137,6 +138,7 @@ declare :: forall name ty env
         -> EnvironmentProxy ( '(name, ty) ': env)
 declare = BindingProxy (Proxy @name)
 
+-- | The empty environment.
 endOfDecls :: EnvironmentProxy '[]
 endOfDecls = EmptyEnvProxy
 

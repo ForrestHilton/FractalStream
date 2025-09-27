@@ -1,25 +1,13 @@
 {-# language UndecidableInstances #-}
 module Actor
-  ( -- Actor(..)
-  -- , SomeActor(..)
-  type ToFun(..)
+  ( type ToFun(..)
   ) where
 
---import Event
 import Language.Code
 import Language.Value.Evaluator (HaskellTypeOfBinding)
 import GHC.TypeLits
 import Data.Kind
 
-{-
-data SomeActor where
-  SomeActor :: forall actor effs. Actor actor effs => actor -> Proxy effs -> SomeActor
-
-class Actor actor effs where
-
-  handle :: actor -> Proxy effs -> Event args -> Maybe (Code effs args 'VoidT)
-  handle _ _ _ = Nothing
--}
 
 class ToFun (env :: Environment) (result :: Type) where
   type ToFunction env result :: Type

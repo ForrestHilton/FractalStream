@@ -436,7 +436,7 @@ runEventHandler ctx draw evth args = do
   iorefs :: Context IORefTypeOfBinding env <-
     mapContextM (\_ _ d -> getDynamic d >>= newIORef) ctx
 
-  -- Build an handler for the Output effect that outputs values
+  -- Build a handler for the Output effect that outputs values
   -- into the corresponding IORef in `iorefs`.
   let handleOutput :: forall e t
                 . EnvironmentProxy e

@@ -61,12 +61,9 @@ library
   exposed-modules:
                        UI
 
-                       Backend
-
                        Actor
                        Actor.Viewer
                        Actor.Tool
-                       Actor.Settings
 
                        Actor.Configuration
                        Actor.Ensemble
@@ -113,8 +110,6 @@ library
                        Data.Color
                        Data.Recursive
                        Data.DynamicValue
-
-                       Template.Complex.Parametric
 
                        Utilities
 

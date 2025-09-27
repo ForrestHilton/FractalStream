@@ -66,8 +66,6 @@ executable FractalStream
   main-is:             Main.hs
   other-modules:       UI.Tile
                        UI.Definition
-                       UI.WxWidgets
-                       UI.WX.Viewer
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , fractalstream-backend-llvm

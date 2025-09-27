@@ -30,15 +30,19 @@ main = wxMain
 
 wxMain :: IO ()
 wxMain = withJIT $ \jit -> start $ do
-  let getProject = do
+  f <- frame [ text := "FractalStream 2"
+             , on resize := propagateEvent
+             ]
+
+  let getProject verb k = do
         prj <- fileOpenDialog objectNull True True
-               "Open a FractalStream 2 project"
+               (verb ++ " a FractalStream 2 project")
                [ ("FractalStream 2 project files", ["*.yaml"])
                , ("All files", ["*.*"])
                ] "" ""
-        maybe getProject pure prj
-
-  yamlFile <- getProject
+        case prj of
+          Nothing -> pure ()
+          Just yamlFile -> k yamlFile
 
   -- TODO: verify that the code for each viewer, tool, etc works properly
   --       with the splices declared by the setup config. e.g. all code
@@ -48,13 +52,17 @@ wxMain = withJIT $ \jit -> start $ do
   --       If the ensemble passes this verification, then the end-user
   --       should not be able to cause a compilation failure via the
   --       UI.
-  if True
-    then do
-      ensemble <- YAML.decodeFileThrow yamlFile
-      let jitter = ComplexViewerCompiler (withViewerCode' jit)
-      runEnsemble jitter wxUI ensemble
-    else do
-      editProject yamlFile
+  new  <- button f [ text := "New project" ]
+  open <- button f [ text := "Open project"
+                   , on command := getProject "Open" $ \yamlFile -> do
+                       ensemble <- YAML.decodeFileThrow yamlFile
+                       let jitter = ComplexViewerCompiler (withViewerCode' jit)
+                       runEnsemble jitter wxUI ensemble
+                   ]
+  edit <- button f [ text := "Edit project"
+                   , on command := getProject "Edit" editProject
+                   ]
+  set f [ layout := column 5 [ widget new, widget open, widget edit ]]
 
 editProject :: FilePath -> IO ()
 editProject yamlFile = do

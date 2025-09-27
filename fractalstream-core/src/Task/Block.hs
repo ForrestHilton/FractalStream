@@ -24,8 +24,6 @@ import Data.Time (diffUTCTime, getCurrentTime)
 import Data.Complex
 import Foreign (Ptr, peekByteOff, pokeByteOff, allocaArray)
 
--- import Utilities (groupsOf)
-
 -- | A Block carries the information required to go from a
 --   runnable dynamical system and choice of color scheme
 --   to a buffer filled with the resulting color data.
@@ -107,53 +105,10 @@ fillBlock Block{..} = do
       -- Completed the block, signal for a redraw
       void (tryPutMVar shouldRedraw ())
 
-{-
--- | Render the block into its output buffer.
-fillBlock :: Block -> IO ()
-fillBlock Block{..} = do
-    let skip = if logSampleRate < 0 then 2^(negate logSampleRate) else 1
-        k    = if logSampleRate > 0 then 2^logSampleRate          else 1
-        subsamples  = [s / k | s <- [0..k-1]]
-        nSubsamples = floor (k^2)
-
-    let points    = [ (x,y) | y <- [0, skip .. ySize - 1]
-                            , x <- [0, skip .. xSize - 1] ]
-        uv_points = [ (fromIntegral (x0 + x), fromIntegral (y0 + y))
-                    | (x,y) <- points ]
-        indexOf (u,v) = u + v * xStride
-
-    let subsample (u,v) = [ (u + du, v + dv) | du <- subsamples, dv <- subsamples ]
-
-    let samples = map coordToModel $ concatMap subsample uv_points
-
-    -- Run the computation on each subsampled point.
-    results <- compute samples
-
-    -- Resample the results
-    let rgbs = resampleBy averageColor nSubsamples results
-
-    -- Fill target buffer with result colors.
-    with blockBuffer $ \buffer -> withForeignPtr buffer $ \ptr -> do
-      forM_ (zip uv_points rgbs) $ \((u,v), rgb) -> do
-        let index = floor $ u + v * fromIntegral xStride
-        forM_ [indexOf (du,dv) | dv <- [0 .. skip - 1]
-                               , du <- [0 .. skip - 1] ] $ \offset -> do
-          pokeColor ptr (index + offset) rgb
-
-    -- Completed the block, signal for a redraw
-    void (tryPutMVar shouldRedraw ())
-
-resampleBy :: ([a] -> b) -> Int -> [a] -> [b]
-resampleBy f n
-  | n > 0     = map f . groupsOf n
-  | otherwise = map f . groupsOf 1
--}
-
 -- | Chop up a block into sub-blocks, delegate rendering
 --   tasks for sub-blocks, and blit the results back
 --   into an image.
 progressively :: (Block -> IO ()) -> (Block -> IO ())
-
 progressively render block = do
 
     let subBlockSize = 16

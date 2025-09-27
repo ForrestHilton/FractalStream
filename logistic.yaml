@@ -1,0 +1,52 @@
+viewer:
+  title: Bifurcation diagram for the logistic map
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  pixel-size: px
+  initial-center: 0
+  initial-pixel-size: 1/128
+  code: |
+      init x : R to im(z)
+      init x0 : R to x
+      init r : R to re(z)
+      init k : Z to 0
+      init best : R to outer
+      loop
+        set x to r x (1 - x)
+        set k to k + 1
+        k < warmup
+      set k to 0
+      loop
+        set x to r x (1 - x)
+        set k to k + 1
+        if |x - x0| < best then
+          set best to |x - x0|
+        k < max_iters and |x - x0| > tol
+      blend(best / outer, white, black)
+
+configuration:
+  title: Configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "tolerance: "
+        value: "0.0001"
+        type: R
+        variable: tol
+    - text-entry:
+        label: "outer tolerance: "
+        value: "0.01"
+        type: R
+        variable: outer
+    - text-entry:
+        label: "Max. iterations:"
+        value: "1000"
+        type: Z
+        variable: max_iters
+    - text-entry:
+        label: "Warmup iterations:"
+        value: "1000"
+        type: Z
+        variable: warmup

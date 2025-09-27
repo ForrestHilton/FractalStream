@@ -15,8 +15,10 @@ viewer:
       if k = max_iters then
         black
       else
-        init t : R to 1.0 * k / max_iters
-        blend (t^p, dark blue, white)
+        init t : R to k
+        init m : R to max_iters
+        blend ((t / m)^p, dark blue, white)
+
   tools:
     - name: Trace
       shortcut: t
