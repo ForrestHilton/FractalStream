@@ -1,13 +1,13 @@
 {-# language OverloadedStrings, UndecidableInstances, NumericUnderscores #-}
 {-# options_ghc -Wno-orphans #-}
 
-module UI.Definition
-  ( wxUI
+module UI.ProjectViewer
+  ( viewProject
   ) where
 
 import Language.Environment
 import Language.Type
-import Data.Color (Color, colorToRGB, rgbToColor)
+import Data.Color (Color, colorToRGB)
 import Control.Concurrent.MVar
 import Control.Monad.State hiding (get)
 
@@ -21,12 +21,14 @@ import           Graphics.UI.WXCore.WxcClassesAL
 import           Graphics.UI.WXCore.WxcClassesMZ
 import Data.Time (diffUTCTime, getCurrentTime)
 import Data.Planar
+
 import UI.Tile
+import UI.Layout
+
 import Data.IORef
 import Data.Word
 import Foreign (Ptr)
 
-import Actor.Layout
 import Actor.UI
 import Actor.Tool
 import Actor.Viewer.Complex
@@ -43,47 +45,56 @@ import Data.Kind
 import Data.Indexed.Functor
 import Fcf (Exp, Eval, Pure1)
 
-data Unit :: (Environment, FSType) -> Exp Type
-type instance Eval (Unit et) = ()
+viewProject :: (forall a. Frame a -> [Menu ()] -> IO ())
+            -> UI
+viewProject addMenuBar = UI
+  { newEnsemble = pure ()
 
-wxUI :: UI
-wxUI = UI {..}
-  where
+  , runSetup = \_ title setupUI continue -> do
+      f <- frame [ text := title
+                 , on resize := propagateEvent
+                 ]
 
-  newEnsemble = pure ()
+      addMenuBar f []
+      WX.windowOnClose f (set f [ visible := False ])
 
-  runSetup = \_ title setupUI continue -> do
-    f <- frame [ text := title
-               , on resize := propagateEvent
-               ]
+      innerLayout <- generateWxLayout f setupUI
+      compileButton <- button f [ text := "Go!"
+                                , on command := do
+                                    set f [ visible := False ]
+                                    continue
+                                ]
+      set f [ layout := fill . margin 5 . column 5
+              $ [ innerLayout, widget compileButton ]
+            ]
 
-    WX.windowOnClose f (set f [ visible := False ])
+  , makeLayout = \_ title ui -> do
+      f <- frame [ text := title
+                 , on resize := propagateEvent
+                 ]
 
-    innerLayout <- generateWxLayout f setupUI
-    compileButton <- button f [ text := "Go!"
-                              , on command := do
-                                  set f [ visible := False ]
-                                  continue
-                              ]
-    set f [ layout := fill . margin 5 . column 5
-                      $ [ innerLayout, widget compileButton ]
-          ]
+      WX.windowOnClose f (set f [ visible := False ])
 
-  makeLayout = \_ title ui -> do
-    f <- frame [ text := title
-               , on resize := propagateEvent
-               ]
+      addMenuBar f []
 
-    WX.windowOnClose f (set f [ visible := False ])
+      innerLayout <- generateWxLayout f ui
+      set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
 
-    innerLayout <- generateWxLayout f ui
-    set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
+  , makeViewer = const (makeWxComplexViewer addMenuBar)
+  }
 
-  makeViewer = \_ vup@ViewerUIProperties{..} theViewer@ComplexViewer'{..} -> do
+makeWxComplexViewer :: (forall a. Frame a -> [Menu ()] -> IO ())
+                    -> ViewerUIProperties
+                    -> ComplexViewer'
+                    -> IO ()
+makeWxComplexViewer
+  addMenuBar
+  vup@ViewerUIProperties{..}
+  theViewer@ComplexViewer'{..} = do
 
     let clone = do
           newCV <- cloneComplexViewer theViewer
-          makeViewer () vup newCV
+          makeWxComplexViewer addMenuBar vup newCV
 
     f <- frame [ text := vpTitle
                , on resize := propagateEvent
@@ -144,6 +155,9 @@ wxUI = UI {..}
             set lastTileImage [value := img]
             set animate [value := Just (now, oldModel, img)]
 
+    -- Convert back and forth between viewport coordinates and coordinates
+    -- in the underlying model (e.g. viewport coordinates to C-plane coordinates in
+    -- the dynamical system or parameter plane)
     let viewToModel pt = do
             Size { sizeW = w, sizeH = h } <- get f clientSize
             let dim = (w,h)
@@ -172,7 +186,7 @@ wxUI = UI {..}
 
                 mdl <- get model value
                 get currentToolIndex value >>= \case
-                  Nothing -> paintToolLayer' (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands lastClick draggedTo dc r viewRect
+                  Nothing -> paintToolLayerWithDragBox (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands lastClick draggedTo dc r viewRect
                   Just{} -> paintToolLayer (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands dc
 
               Just (startTime, oldModel, oldImage) -> do
@@ -213,7 +227,7 @@ wxUI = UI {..}
                     dy = negate (snd (modelCenter newModel) - snd (modelCenter oldModel))
                          / snd (modelPixelDim oldModel)
 
-                      -- draw the old image
+                -- draw the old image
                 restoringContext $ do
                   let k = 1 / sqrt ( (fst (modelPixelDim oldModel) * snd (modelPixelDim oldModel))
                                    / (fst (modelPixelDim newModel) * snd (modelPixelDim newModel)))
@@ -295,7 +309,6 @@ wxUI = UI {..}
                         -- Completed a drag. Zoom in to the dragged box, unless
                         -- the box is pathologically small; in that case, treat
                         -- the action as if it were a simple click.
-                        selectRegion box
                         oldModel <- get model value
                         Size { sizeW = w, sizeH = h } <- get f clientSize
                         newCenter <- viewToModel (viewportToPoint $ rectCenter box)
@@ -463,32 +476,15 @@ wxUI = UI {..}
           NoOp{} -> pure ()
           DoWhile{} -> pure ()
           IfThenElse _ tf _ _ -> gatherUsedVars tf
-          Effect{} -> error "TODO: Effect"
+          Effect{} -> pure () -- FIXME, should also inspect the effects
 
     fromContextM_ (\name _ v ->
                       when (symbolVal name `Set.member` usedVars)
                         (v `listenWith` (\_ _ -> requestRefresh))) cvConfig'
 
     -------------------------------------------------------
-    -- Tools
-    -------------------------------------------------------
-    forM_ theTools $ \Tool{..} -> do
-      putStrLn ("loading tool `" ++ tiName toolInfo ++ "`")
-
-    -------------------------------------------------------
     -- Menus
     -------------------------------------------------------
-
-    -- File menu
-    file <- menuPane      [text := "&File"]
-    menuItem file [ text := "&New", on command := putStrLn "TODO"]
---    _    <- menuQuit file [ text := "&Quit"
---                          , help := "Quit FractalStream"]
-
-    -- Help menu
-    hlp   <- menuHelp      [ text := "&Help" ]
-    menuItem hlp [ text := "blah" ]
-    about <- menuAbout hlp [text := "About FractalStream"]
 
     -- Viewer menu
     viewMenu <- menuPane [text := "&Viewer"]
@@ -529,19 +525,11 @@ wxUI = UI {..}
     mapM_ (uncurry addToToolMenu) ( zip [0..] . map toolInfo $ theTools )
     set nav [ checked := True ]
 
-    let menuBarItems
-          = [ file, viewMenu ]
-          ++ [ tools | length theTools > 0 ]
-          ++ [ hlp ]
+    let menuBarItems =
+          [ viewMenu ] ++
+          [ tools | length theTools > 0 ]
 
-    set f [ menuBar := menuBarItems
-          , on (menu about) :=
-              infoDialog f "About FractalStream" $ unlines
-              [ "Contributors:"
-              , "Matt Noonan"
-              ]
-          ]
-
+    addMenuBar f menuBarItems
 
 data Model = Model
   { modelCenter   :: (Double, Double)
@@ -568,120 +556,6 @@ interpolateModel t m1 m2 = m2
     logInterp p q = p * (q/p) ** t
     logInterp2  (p1,p2) (q1,q2) = (logInterp p1 q1, logInterp p2 q2)
     logInterpolate f = logInterp2 (f m1) (f m2)
-
-generateWxLayout :: Dynamic dyn
-                 => Window a
-                 -> Layout dyn
-                 -> IO WX.Layout
-
-generateWxLayout frame0 wLayout = do
-  panel0 <- panel frame0 []
-  computedLayout <- go panel0 wLayout
-  pure (container panel0 computedLayout)
-
- where
-
-   go :: Dynamic dyn => Window a -> Layout dyn -> IO WX.Layout
-   go p = \case
-
-     Panel pTitle inner -> do
-       p' <- panel p [ ]
-       go p' inner
-       pure (fill $ boxed pTitle (widget p'))
-
-     Vertical parts -> do
-       p' <- panel p []
-       lo <- fill . column 5 <$> mapM (go p') parts
-       set p' [ layout := lo ]
-       pure (fill (widget p'))
-
-     Horizontal parts -> do
-       p' <- panel p []
-       lo <- fill . margin 10 . row 5 <$> mapM (go p') parts
-       set p' [ layout := lo ]
-       pure (fill (widget p'))
-
-     Tabbed ts -> do
-       nb <- feed2 [ visible := True ] 0 $
-             initialWindow $ \iD rect' ps s -> do
-                   e <- notebookCreate p iD rect' s
-                   set e ps
-                   pure e
-       forM_ ts $ \(lab, x) -> do
-         c <- panel nb []
-         page <- go c x
-         set c [ layout := page ]
-         notebookAddPage nb c lab True (-1)
-       notebookSetSelection nb 0
-       pure (fill $ widget nb)
-
-     ColorPicker (Label lab) v -> do
-       (r0, g0, b0) <- colorToRGB <$> getDynamic v
-       picker <- feed2 [ text := lab, visible := True ] 0 $
-                 initialWindow $ \iD rect' ps s -> do
-                   e <- colorPickerCtrlCreate p iD (rgb r0 g0 b0) rect' s
-                   set e ps
-                   pure e
-       let newPick = do
-             c <- colorPickerCtrlGetColour picker
-             let r = colorRed c
-                 g = colorGreen c
-                 b = colorBlue c
-             void (setDynamic v (rgbToColor (r, g, b)))
-       WX.windowOnEvent picker [wxEVT_COMMAND_COLOURPICKER_CHANGED] newPick (const newPick)
-       pure (fill $ row 5 [ margin 3 (label lab), hfill (widget picker) ])
-
-     CheckBox (Label lab) v -> do
-       initial <- getDynamic v
-       cb <- checkBox p [ text := lab
-                        , checkable := True
-                        , checked := initial
-                        , visible := True
-                        ]
-       set cb [ on command := do
-                  isChecked <- get cb checked
-                  void (setDynamic v isChecked)
-              ]
-       listenWith v (\_ isChecked -> set cb [ checked := isChecked ])
-       pure (widget cb)
-
-     TextBox (Label lab) v -> do
-       initial <- getDynamic v
-       te <- textEntry p [ text := initial
-                         , processEnter := True
-                         , tooltip := ""
-                         ]
-       normalBG <- get te bgcolor
-       set te [ on command := do
-                  newText <- get te text
-                  setDynamic v newText >>= \case
-                    Nothing -> set te [ bgcolor := normalBG
-                                      , tooltip := "" ]
-                    Just err -> do
-                      set te [ bgcolor := rgb 160 100 (100 :: Int)
-                             , tooltip := unlines
-                                 [ "Could not parse an expression"
-                                 , ""
-                                 , show err ]
-                             ]
-              , on focus := (\case
-                                True -> pure ()
-                                False -> do
-                                  newText <- get te text
-                                  oldText <- getDynamic v
-                                  when (newText /= oldText) $ setDynamic v newText >>= \case
-                                    Nothing -> set te [ bgcolor := normalBG
-                                                      , tooltip := "" ]
-                                    Just err -> do
-                                      set te [ bgcolor := rgb 160 100 (100 :: Int)
-                                             , tooltip := unlines
-                                               [ "Could not parse an expression"
-                                               , ""
-                                               , show err ]
-                                             ])
-              ]
-       listenWith v (\_ newText -> set te [ text := newText ])
-       pure (fill $ row 5 [ margin 3 (label lab), hfill (widget te) ])
 
 renderTile' :: Valued w
             => IORef Int
@@ -729,11 +603,6 @@ drawBox dc fillColor lineColor coords =
                       , pen := penColored lineColor 2
                       ]
 
-selectRegion :: Rectangle Viewport -> IO ()
-selectRegion r = do
-    putStrLn $ "selected region " ++ show r
-    return ()
-
 -- | Paint the state of a tile into a device context.
 generateTileImage
     :: Tile    -- ^ A tile to convert to an image
@@ -741,13 +610,11 @@ generateTileImage
     -> IO (Image ())
 generateTileImage viewerTile _windowRect = do
     let (width, height) = tileRect viewerTile
-    --let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
-    --let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
-    --                 (fHeight + height) `div` 2 - height )
-    --putStrLn "generateTileImage"
     withSynchedTileBuffer viewerTile (imageCreateFromData (sz width height))
 
-paintToolLayer' :: ((Double, Double) -> IO Point)
+-- | Read draw commands from each tool layer and paint them into the
+-- given device context, and then draw the zoom drag box on top.
+paintToolLayerWithDragBox :: ((Double, Double) -> IO Point)
                -> (Double, Double)
                -> IO [[DrawCommand]]
                -> Var (Maybe Viewport)
@@ -756,7 +623,7 @@ paintToolLayer' :: ((Double, Double) -> IO Point)
                -> Rect
                -> Rect
                -> IO ()
-paintToolLayer' modelToView pxDim getDrawCommands lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
+paintToolLayerWithDragBox modelToView pxDim getDrawCommands lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
     paintToolLayer modelToView pxDim getDrawCommands dc
     dragBox <- getDragBox lastClick draggedTo
     case dragBox of
@@ -765,6 +632,8 @@ paintToolLayer' modelToView pxDim getDrawCommands lastClick draggedTo dc _ _ = d
             let boxPts = map viewportToPoint (rectPoints box)
             drawBox dc (rgba @Word8 0 128 255 128) white boxPts
 
+-- | Read draw commands for each tool layer and paint them into the
+-- given device context
 paintToolLayer :: ((Double, Double) -> IO Point)
                -> (Double, Double)
                -> IO [[DrawCommand]]
@@ -820,6 +689,10 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
 
         SetFill _ c -> writeIORef currentBrush (fsColorToWxColor c)
 
+-- | Convert a FractalStream color to a WxWidgets color
 fsColorToWxColor :: Color -> WX.Color
 fsColorToWxColor c =
   let (r,g,b) = colorToRGB c in rgba r g b 255
+
+data Unit :: (Environment, FSType) -> Exp Type
+type instance Eval (Unit et) = ()

@@ -63,9 +63,18 @@ common FractalStream-common
 executable FractalStream
   import: FractalStream-common
   ghc-options:         -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
+
   main-is:             Main.hs
+
   other-modules:       UI.Tile
-                       UI.Definition
+                       UI.ProjectViewer
+                       UI.ProjectEditor
+                       UI.CodeEditor
+                       UI.Layout
+                       UI.Menu
+                       UI.ProjectActions
+                       UI.Welcome
+
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , fractalstream-backend-llvm
@@ -87,5 +96,7 @@ executable FractalStream
                      , yaml
                      , aeson
                      , text
+                     , utf8-string
+                     , include-file
   hs-source-dirs:      src
   extra-lib-dirs:      /usr/local/opt/libffi/lib
