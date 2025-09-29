@@ -38,6 +38,8 @@ import Language.Effect.Draw
 import Data.DynamicValue
 import Language.Value (Value, ValueF(..))
 import Language.Code (CodeF(..))
+
+import Control.Monad
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.TypeLits
@@ -204,10 +206,10 @@ makeWxComplexViewer
                 gc <- graphicsContextCreate dc
                 newModel <- get model value
                 let midModel = interpolateModel t oldModel newModel
-                    withLayer opacity action = do
-                      graphicsContextBeginLayer gc opacity
+                    withLayer (_opacity :: Double) action = do
+                      --graphicsContextBeginLayer gc opacity
                       action
-                      graphicsContextEndLayer gc
+                      --graphicsContextEndLayer gc
                     restoringContext action = do
                       graphicsContextPushState gc
                       action

@@ -1,7 +1,6 @@
 name: macOS build
 
 on:
-  - push
   - workflow_dispatch
 
 jobs:
@@ -16,12 +15,10 @@ jobs:
         brew install haskell-stack
         brew install libffi
         brew install llvm-hs/llvm/llvm-12
-        cp /usr/local/Cellar/llvm-12/12_2/lib/llvm-12/lib/libc++abi.1.dylib /usr/local/lib
         echo WX `which wx-config`
         brew install wxwidgets@3.2
         ln -s `which wx-config-3.2` $(dirname `which wx-config-3.2`)/wx-config
         ln -s `which wxrc-3.2` $(dirname `which wxrc-3.2`)/wxrc
-        ln -s /usr/local/Cellar/wxwidgets/3.2.2.1_1/lib/wx /usr/local/lib/wx
         echo `which wx-config`
         wx-config --list
         wx-config --version

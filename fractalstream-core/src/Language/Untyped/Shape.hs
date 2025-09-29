@@ -17,8 +17,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Coerce
 import Language.Untyped.Constraints
-import Control.Monad.State hiding (foldM)
-import Control.Monad.Except hiding (foldM)
+import Control.Monad.State
+import Control.Monad.Except
 import Data.STRef
 
 ---------------------------------------------------------------------------------

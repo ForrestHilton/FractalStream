@@ -1,4 +1,5 @@
 {-# language RecursiveDo, OverloadedStrings #-}
+{-# options_ghc -Wno-incomplete-uni-patterns #-}
 module Backend.LLVM.Code
   ( compile
   , compileRenderer
@@ -16,8 +17,10 @@ import LLVM.IRBuilder.Monad
 import qualified LLVM.IRBuilder.Constant as C
 import qualified LLVM.AST.IntegerPredicate as P
 
+import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
+import Control.Monad.Fix
 
 import Language.Type
 import Language.Code

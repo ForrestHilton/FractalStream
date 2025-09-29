@@ -16,7 +16,7 @@ module Language.Value
 
 import Data.Proxy (Proxy(..))
 import Fcf
-import GHC.TypeLits --hiding (LTI, GTI)
+import GHC.TypeLits hiding (LTI, GTI)
 import Data.Ratio
 
 import Data.Indexed.Functor

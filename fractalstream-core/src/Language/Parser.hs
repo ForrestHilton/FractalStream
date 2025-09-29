@@ -1,5 +1,5 @@
 {-# language OverloadedStrings #-}
-
+{-# options_ghc -Wno-x-partial #-}
 module Language.Parser
   ( type Parser
   , parse

@@ -28,6 +28,7 @@ import Language.Code.InterpretIO
 import Data.DynamicValue
 
 import Data.IORef
+import Control.Monad
 import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map

@@ -12,7 +12,6 @@ import Actor.Event
 import Actor.Layout
 
 import Data.Aeson
-import Data.List (foldl')
 
 data ParsedTool = ParsedTool
   { ptoolInfo :: ToolInfo

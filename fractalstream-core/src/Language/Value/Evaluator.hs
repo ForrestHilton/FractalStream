@@ -16,7 +16,7 @@ import Data.Indexed.Functor
 import Data.Color
 
 import Data.Type.Equality ((:~:)(..))
-import GHC.TypeLits --hiding (LTI, GTI)
+import GHC.TypeLits hiding (LTI, GTI)
 import Fcf (Exp, Eval, Pure1)
 import Unsafe.Coerce
 import Numeric.Extras

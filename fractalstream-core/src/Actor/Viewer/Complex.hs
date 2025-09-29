@@ -30,6 +30,7 @@ import Data.String
 import Data.Maybe (fromMaybe)
 import Foreign (Ptr)
 import GHC.TypeLits
+import Control.Monad
 import Control.Monad.State
 import Fcf (Eval)
 import Data.Aeson

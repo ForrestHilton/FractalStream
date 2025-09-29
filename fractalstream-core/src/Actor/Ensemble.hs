@@ -13,6 +13,7 @@ import Language.Environment
 import Language.Value.Parser (Splice)
 
 import Data.Aeson
+import Control.Monad
 import Control.Monad.Except
 import Data.Proxy
 

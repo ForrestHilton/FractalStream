@@ -16,7 +16,7 @@ custom-setup
     base >=4.8 && <5, Cabal, cabal-macosx
 
 common FractalStream-common
-  ghc-options:         -Wall -Werror -O2
+  ghc-options:         -Wall -Werror -O2 -Wno-star-is-type
   -- This is basically the list of extensions from
   -- https://lexi-lambda.github.io/blog/2018/02/10/an-opinionated-guide-to-haskell-in-2018/
   -- with a few minor additions like ViewPatterns.

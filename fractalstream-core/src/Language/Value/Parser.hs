@@ -36,6 +36,7 @@ import qualified Language.Untyped.Value as U
 
 import Helper.UnionFind
 import Data.STRef
+import Control.Monad
 import Control.Monad.State
 import qualified Data.Map as Map
 import GHC.TypeLits

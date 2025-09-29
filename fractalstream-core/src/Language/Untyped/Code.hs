@@ -13,6 +13,7 @@ import qualified Data.Set as Set
 import Control.Monad.Except
 import Data.Bifunctor
 import Data.Bifunctor.TH
+import Control.Monad
 import Debug.Trace
 
 type Code = Fix (CodeF Value)

@@ -10,9 +10,10 @@ import Language.Value hiding (get, Ty)
 import Data.Indexed.Functor
 import Data.Recursive hiding (Fix)
 
-import GHC.TypeLits --hiding (LTI, GTI)
-import Control.Monad.State.Strict hiding (foldM)
-import Control.Monad.Except hiding (foldM)
+import GHC.TypeLits hiding (LTI, GTI)
+import Control.Monad hiding (foldM)
+import Control.Monad.State.Strict
+import Control.Monad.Except
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set

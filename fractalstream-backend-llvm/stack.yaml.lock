@@ -5,41 +5,19 @@
 
 packages:
 - completed:
-    commit: 423220bffac4990d019fc088c46c5f25310d5a33
-    git: https://github.com/llvm-hs/llvm-hs.git
-    name: llvm-hs
+    name: disassembler
+    version: 0.2.0.1
+    git: https://github.com/mgrabmueller/disassembler
     pantry-tree:
-      sha256: 9b23124e823e5033382960de17f7b2c6a406afc52e6d3c3ac4f08fde382632be
-      size: 12781
-    subdir: llvm-hs
-    version: 12.0.0
+      size: 384
+      sha256: 65eb5dfb873e809603e2e7bb9bed9d97a09d09095e1a17621f1c9f7ecf42a929
+    commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
   original:
-    commit: 423220bffac4990d019fc088c46c5f25310d5a33
-    git: https://github.com/llvm-hs/llvm-hs.git
-    subdir: llvm-hs
-- completed:
-    commit: 423220bffac4990d019fc088c46c5f25310d5a33
-    git: https://github.com/llvm-hs/llvm-hs.git
-    name: llvm-hs-pure
-    pantry-tree:
-      sha256: cdb0ef9cee5b3569791494c8ac4e1dc5d0fe778f7c9bd2f661e537d1e2ca639b
-      size: 2712
-    subdir: llvm-hs-pure
-    version: 12.0.0
-  original:
-    commit: 423220bffac4990d019fc088c46c5f25310d5a33
-    git: https://github.com/llvm-hs/llvm-hs.git
-    subdir: llvm-hs-pure
-- completed:
-    hackage: megaparsec-9.2.0@sha256:0c272aa13b9f663dbd7b74ef81e9b1f9f05cafde50f5362ce87ffd4913046e0b,3213
-    pantry-tree:
-      sha256: 7ca5da73a72d6242375e6bf16f6868e16f5f7f02dd27a0ff12cf7a9422cf2c71
-      size: 1518
-  original:
-    hackage: megaparsec-9.2.0@sha256:0c272aa13b9f663dbd7b74ef81e9b1f9f05cafde50f5362ce87ffd4913046e0b,3213
+    git: https://github.com/mgrabmueller/disassembler
+    commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
 snapshots:
 - completed:
-    sha256: 9f9fe35c949414146840a985fb228fd397c504d1781b834bfc9ab935f4d27df6
-    size: 586923
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/9.yaml
-  original: lts-18.9
+    size: 726097
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/24/12.yaml
+    sha256: 0d0bb681dd5be9b930c8fc070d717aae757b9aed176ae6047d87624b46406816
+  original: lts-24.12
