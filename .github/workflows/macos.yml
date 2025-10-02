@@ -175,7 +175,7 @@ jobs:
       id: cache-dot-stack
       uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-cache-dot-stack-for-#{{ inputs.wxwidgets }}
+        key: ${{ runner.os }}-cache-dot-stack-for-${{ inputs.wxwidgets }}
         path: ~/.stack
 
     - if: ${{ steps.cache-dot-stack.outputs.cache-hit != 'true' }}
@@ -186,7 +186,7 @@ jobs:
 
     - name: Build FractalStream
       env:
-        TARGET_BUNDLE_NAME: FractalStream-${{ runner.os }}-${{ github.sha }}
+        TARGET_BUNDLE_NAME: FractalStream-${{ runner.os }}-${{ github.sha }}-wx-${{ inputs.wxwidgets }}
       run: |
         cd fractalstream-ui-wx
         stack build
@@ -197,5 +197,5 @@ jobs:
     - name: Archive app bundle
       uses: actions/upload-artifact@v4
       with:
-          name: FractalStream-${{ runner.os }}-${{ github.sha }}.zip
-          path: FractalStream-${{ runner.os }}-${{ github.sha }}.zip
+          name: FractalStream-${{ runner.os }}-${{ github.sha }}-wx-${{ inputs.wxwidgets }}.zip
+          path: FractalStream-${{ runner.os }}-${{ github.sha }}-wx-${{ inputs.wxwidgets }}.zip
