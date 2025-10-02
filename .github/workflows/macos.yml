@@ -1,7 +1,18 @@
 name: macOS build
 
 on:
-  - workflow_dispatch
+  workflow_dispatch:
+    inputs:
+      wxwidgets:
+        description: 'How should we get the wxWidgets 3.2 dependency?'
+        required: true
+        default: 'homebrew'
+        type: choice
+        options:
+          - 'homebrew'
+          - 'build-static'
+          - 'build-dynamic'
+
 
 jobs:
   build:
@@ -37,48 +48,17 @@ jobs:
         brew install jpeg-turbo
         brew install pcre2
 
-    - if: 0 == 1
+    - if: ${{ inputs.wxwidgets != 'homebrew' }}
       name: Get cached build of wxWidgets 3.2
-      id: cache-wxwidgets-static
+      id: cache-wxwidgets
       uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-cache-wxwidgets-static
+        key: ${{ runner.os }}-cache-wxwidgets-${{ inputs.wxwidgets }}
         path: wxWidgets-3.2.8
 
-    - if: 1 == 1 #if: ${{ steps.cache-wxwidgets-static.outputs.cache-hit != 'true' }}
-      name: Build wxWidgets 3.2
+    - if: ${{ inputs.wxwidgets == 'homebrew' }}
+      name: Download wxWidgets 3.2
       run: |
-
-        ##################################################################
-        # Build wxWidgets for the Cocoa toolkit (homebrew seems to use
-        # a Carbon version, maybe?)
-        ##################################################################
-
-        # This worked locally but failed in CI due to not finding the tiff.h header,
-        # though libtiff is installed.
-
-        #wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8/wxWidgets-3.2.8.tar.bz2
-        #tar xvf wxWidgets-3.2.8.tar.bz2
-        #cd wxWidgets-3.2.8
-        #mkdir build-cocoa
-        #cd build-cocoa
-        #../configure
-        #make
-        # Tweak the path to pick up wx-config from this build, then print some info
-        #export PATH=`pwd`:$PATH
-        #cd ../..
-
-        #wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8/wxWidgets-3.2.8.tar.bz2
-        #tar xvf wxWidgets-3.2.8.tar.bz2
-        #cd wxWidgets-3.2.8
-        #mkdir build-cocoa
-        #cd build-cocoa
-        #cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=OFF ..
-        #cmake --build .
-
-
-        # Since the local build failed in CI, grab the
-        # wxwidgets package from homebrew
         brew install wxwidgets@3.2
         ln -s `which wx-config-3.2` /usr/local/bin/wx-config
         ln -s `which wxrc-3.2` /usr/local/bin/wxrc
@@ -89,7 +69,30 @@ jobs:
         wx-config --version-full
         wx-config --libs
 
-    - if: 0 == 1
+
+    - if: ${{ inputs.wxwidgets == 'build-static' && steps.cache-wxwidgets-static.outputs.cache-hit != 'true' }}
+      name: Build wxWidgets 3.2 for static linking
+      run: |
+        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8/wxWidgets-3.2.8.tar.bz2
+        tar xvf wxWidgets-3.2.8.tar.bz2
+        cd wxWidgets-3.2.8
+        mkdir build-cocoa
+        cd build-cocoa
+        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=OFF ..
+        cmake --build .
+
+    - if: ${{ inputs.wxwidgets == 'build-dynamic' && steps.cache-wxwidgets-static.outputs.cache-hit != 'true' }}
+      name: Build wxWidgets 3.2 for dynamic linking
+      run: |
+        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8/wxWidgets-3.2.8.tar.bz2
+        tar xvf wxWidgets-3.2.8.tar.bz2
+        cd wxWidgets-3.2.8
+        mkdir build-cocoa
+        cd build-cocoa
+        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=OFF ..
+        cmake --build .
+
+    - if: ${{ inputs.wxwidgets != 'homebrew' }}
       name: Install wxWidgets 3.2
       run: |
         cd wxWidgets-3.2.8/build-cocoa
@@ -99,7 +102,7 @@ jobs:
       id: cache-wxc
       uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-cache-wxc
+        key: ${{ runner.os }}-cache-wxc-for-${{ inputs.wxwidgets }}
         path: wxHaskell
 
     - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
@@ -172,7 +175,7 @@ jobs:
       id: cache-dot-stack
       uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-cache-dot-stack
+        key: ${{ runner.os }}-cache-dot-stack-for-#{{ inputs.wxwidgets }}
         path: ~/.stack
 
     - if: ${{ steps.cache-dot-stack.outputs.cache-hit != 'true' }}
