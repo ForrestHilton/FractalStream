@@ -78,7 +78,7 @@ jobs:
         cd wxWidgets-3.2.8
         mkdir build-cocoa
         cd build-cocoa
-        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=OFF ..
+        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=ON ..
         cmake --build .
         ln -s wx-config /usr/local/bin/wx-config-3.2
         ln -s lib/wxrc /usr/local/bin/wxrc-3.2
@@ -91,7 +91,7 @@ jobs:
         cd wxWidgets-3.2.8
         mkdir build-cocoa
         cd build-cocoa
-        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=OFF ..
+        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=ON ..
         cmake --build .
         ln -s wx-config /usr/local/bin/wx-config-3.2
         ln -s lib/wxrc /usr/local/bin/wxrc-3.2
