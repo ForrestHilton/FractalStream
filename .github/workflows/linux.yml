@@ -14,11 +14,18 @@ jobs:
 
     - name: Install dependencies
       run: |
+        # Install libffi6
         sudo apt update
         curl -LO http://archive.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi6_3.2.1-8_amd64.deb
         sudo dpkg -i libffi6_3.2.1-8_amd64.deb
+
+        # Install libtinfo5
         wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
         sudo apt install ./libtinfo5_6.3-2ubuntu0.1_amd64.deb
+
+        # Install Haskell stack
+        sudo apt install stack -y
+        stack upgrade --binary
 
     - name: Install wxWidgets 3.2
       run: |
