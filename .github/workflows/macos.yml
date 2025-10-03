@@ -188,8 +188,7 @@ jobs:
         cd fractalstream-ui-wx
         stack build --only-snapshot
 
-    - if: 0 == 1
-      name: Build FractalStream
+    - name: Build FractalStream
       env:
         TARGET_BUNDLE_NAME: FractalStream-${{ runner.os }}-${{ github.sha }}-wx-${{ inputs.wxwidgets }}
       run: |
@@ -199,8 +198,7 @@ jobs:
         cd ..
         zip -r $TARGET_BUNDLE_NAME.zip $TARGET_BUNDLE_NAME.app
 
-    - if: 0 == 1
-      name: Archive app bundle
+    - name: Archive app bundle
       uses: actions/upload-artifact@v4
       with:
           name: FractalStream-${{ runner.os }}-${{ github.sha }}-wx-${{ inputs.wxwidgets }}.zip
