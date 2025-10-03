@@ -80,8 +80,6 @@ jobs:
         cd build-cocoa
         cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=ON ..
         cmake --build .
-        ln -s wx-config /usr/local/bin/wx-config-3.2
-        ln -s lib/wxrc /usr/local/bin/wxrc-3.2
 
     - if: ${{ inputs.wxwidgets == 'build-dynamic' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
       name: Build wxWidgets 3.2 for dynamic linking
@@ -93,13 +91,13 @@ jobs:
         cd build-cocoa
         cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=ON ..
         cmake --build .
-        ln -s wx-config /usr/local/bin/wx-config-3.2
-        ln -s lib/wxrc /usr/local/bin/wxrc-3.2
 
     - if: ${{ inputs.wxwidgets != 'homebrew' }}
       name: Install wxWidgets 3.2
       run: |
         cd wxWidgets-3.2.8/build-cocoa
+        ln -s wx-config /usr/local/bin/wx-config-3.2
+        ln -s lib/wxrc /usr/local/bin/wxrc-3.2
         sudo cmake --build . --target=install
 
     - name: Get cached build of wxc
