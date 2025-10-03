@@ -70,8 +70,8 @@ splitLdOptions opt = case opt of
   _ | ".framework" `isSuffixOf` opt
                       -> [ Right (Right "-framework")
                          , Right . Right
-                         . takeWhile (/= ".") . reverse
-                         . takeWhile (/= "/") . reverse
+                         . takeWhile (/= '.') . reverse
+                         . takeWhile (/= '/') . reverse
                          $ opt
                          ]
     | otherwise       -> [Right (Right opt)]
