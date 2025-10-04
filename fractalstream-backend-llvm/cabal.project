@@ -1,6 +1,22 @@
 packages: . ../fractalstream-core
 
+constraints: llvm-hs -shared-llvm
+
+allow-newer: llvm-hs:transformers, llvm-hs-pure:transformers, llvm-hs-pure:bytestring
+
 source-repository-package
     type: git
     location: https://github.com/mgrabmueller/disassembler
     tag: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
+
+source-repository-package
+    type: git
+    location: https://github.com/matt-noonan/llvm-hs.git
+    tag: 46fbe902a83a4198f296e2062c767b34ecc6be65
+    subdir: llvm-hs
+
+source-repository-package
+    type: git
+    location: https://github.com/matt-noonan/llvm-hs.git
+    tag: 46fbe902a83a4198f296e2062c767b34ecc6be65
+    subdir: llvm-hs-pure
