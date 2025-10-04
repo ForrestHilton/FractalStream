@@ -31,6 +31,7 @@ jobs:
       run: |
         sudo apt install libwxgtk3.2-dev
         sudo apt install libwxgtk-media3.2-dev
+        sudo ln -s /usr/bin/wx-config /usr/bin/wx-config-3.2
 
     - name: Get cached build of wxc
       id: cache-wxc
