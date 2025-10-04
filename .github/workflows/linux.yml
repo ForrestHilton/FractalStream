@@ -32,7 +32,15 @@ jobs:
         sudo apt install libwxgtk3.2-dev
         sudo apt install libwxgtk-media3.2-dev
 
-    - name: Build wxc from wxHaskell
+    - name: Get cached build of wxc
+      id: cache-wxc
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-cache-wxc
+        path: wxHaskell
+
+    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+      name: Build wxc from wxHaskell
       run: |
         git clone https://codeberg.org/wxHaskell/wxHaskell.git
         cd wxHaskell
@@ -42,7 +50,7 @@ jobs:
         ./generate-version-header.sh
         mkdir build
         cd build
-        cmake ..
+        cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON ..
         cmake --build .
 
     - name: Install wxc
@@ -58,7 +66,21 @@ jobs:
         sudo apt update
         sudo apt install llvm-12-dev
 
-    - name: Build FractalStream
+    - name: Get cached .stack
+      id: cache-dot-stack
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-cache-dot-stack
+        path: ~/.stack
+
+    - if: ${{ steps.cache-dot-stack.outputs.cache-hit != 'true' }}
+      name: Build Haskell dependencies
+      run: |
+        cd fractalstream-ui-wx
+        stack build --only-snapshot
+
+    - if: 0 == 1
+      name: Build FractalStream
       run: |
         cd fractalstream-ui-wx
         stack build
