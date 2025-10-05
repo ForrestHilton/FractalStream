@@ -7,18 +7,15 @@ viewer:
   initial-center: 0
   initial-pixel-size: 1/128
   code: |
-      init z : C to 0
-      init k : Z to 0
-      loop
-        set z to z^2 + C
-        set k to k + 1
-        k < max_iters and |z| < escape_radius
+      z : C <- 0
+      k : Z <- 0
+      while k < max_iters and |z| < escape_radius
+        z <- z^2 + C
+        k <- k + 1
       if k = max_iters then
-        black
+        output black to color
       else
-        init t : R to k
-        init m : R to max_iters
-        blend ((t/m)^p, red, yellow)
+        output blend ((k/max_iters)^p, red, yellow) to color
 
 configuration:
   title: Configuration

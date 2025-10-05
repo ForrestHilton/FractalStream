@@ -11,16 +11,14 @@ module Language.Value.Evaluator
   , type ScalarFromContext
   ) where
 
+import FractalStream.Prelude
+
 import Language.Value
 import Data.Indexed.Functor
 import Data.Color
 
-import Data.Type.Equality ((:~:)(..))
-import GHC.TypeLits hiding (LTI, GTI)
-import Fcf (Exp, Eval, Pure1)
 import Unsafe.Coerce
 import Numeric.Extras
-import Data.Kind
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
 data HaskellTypeOfBinding :: Symbol -> FSType -> Exp Type

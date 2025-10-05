@@ -3,60 +3,21 @@ module Language.Value.ParserSpec (spec) where
 import Test.Hspec
 import Language.Type
 import Language.Value
-import Language.Value.Parser hiding (parseValue)
 import Language.Value.Evaluator
-import Language.Untyped.Shape
-import Language.Untyped.Infer
-import Language.Untyped.Constraints hiding (UnboundVariable)
-import Helper.UnionFind
-import Data.STRef
-import Control.Monad.State
+
 import qualified Data.Map as Map
-import GHC.TypeLits
-import Control.Monad
-import Control.Monad.Except
-import Data.Functor ((<&>))
+
+import qualified Language.Value.Parser as P
 
 parseValue :: EnvironmentProxy env
            -> TypeProxy t
            -> String
-           -> Either (Int, BadParse) (Value '(env, t))
-parseValue env rt input = do
-  -- Parse the untyped value
-  uv <- parseUntypedValue input
-  -- Infer the value's shape
-  (v, ctx') <- runST $ do
-    ctx <- fmap Map.fromList $ fromEnvironmentM env $ \name ty -> do
-      let go :: forall ty s. TypeProxy ty -> ST s (UF s (STShape s))
-          go = \case
-            BooleanType -> fresh (STShape BoolShape)
-            IntegerType -> fresh (STShape NumShape)
-            RealType    -> fresh (STShape NumShape)
-            ComplexType -> fresh (STShape NumShape)
-            ColorType   -> fresh (STShape ColorShape)
-            PairType x y -> do
-              ps <- PairShape <$> go x <*> go y
-              fresh (STShape ps)
-            _ -> error "missing case"
-      t <- go ty
-      pure (symbolVal name, t)
+           -> Either String (Value '(env, t))
+parseValue env ty
+  = withEnvironment env
+  $ withKnownType ty
+  $ P.parseValue Map.empty
 
-    s <- inferShape ctx uv
-
-    nextTV <- newSTRef 0
-    ctx' <- forM ctx (shapeToTS nextTV [])
-    evalStateT (toTypeShape nextTV s) ctx' <&> \case
-      Left  e -> Left . (-1,) $ case e of
-        Unbound n -> UnboundVariable n
-        _         -> Other (show e)
-      Right v -> pure (v, ctx')
-
-  --traceM ("v = " ++ show v)
-  -- Infer the value's type
-  case evalStateT (infer env ctx' rt v) initialTCState of
-    Right typedValue -> pure typedValue
-    Left e -> throwError . (-1,) $ case e of
-      _ -> Other (show e)
 
 spec :: Spec
 spec = do
@@ -153,11 +114,15 @@ spec = do
       let parses1 = parseI "(1 + 2) 3 4"
           parses2 = parseF "2 cos pi"
           parses3 = parseF "cos 2pi"
-          parses4 = parseF "cos(2) pi  - cos (2 pi)"
+          parses4 = parseF "cos(2) * pi  - cos (2 pi)"
+          parses5 = parseF "3 cos 2 sin 1"
+          parses6 = parseF "3 2^2"
       parses1 `shouldBe` Right 36
       parses2 `shouldBe` Right (-2)
-      parses3 `shouldBe` Left (3, AmbiguousParse)
+      parses3 `shouldBe` Left "To avoid ambiguity when using implicit mulitplication, functions must go to the left of other values."
       parses4 `shouldBe` Right (cos 2 * pi - 1)
+      parses5 `shouldBe` Right (3 * cos 2 * sin 1)
+      parses6 `shouldBe` Right 12
 
   describe "when parsing parameterized values" $ do
 
@@ -191,11 +156,11 @@ spec = do
 
     it "will not parse an unbound variable" $ do
       let parses1 = parseI1 "(1 + y) *3 + 4"
-      parses1 0    `shouldBe` Left (-1, UnboundVariable "y") -- FIXME: location should be 4
+      parses1 0    `shouldBe` Left "No variable named y is in scope here." -- FIXME: location should be 4
 
     it "will not parse a variable at the wrong type" $ do
       let parses1 = parseI1 "if x and false then 1 else 2"
-      parses1 0 `shouldBe` Left (-1, Other "ShapeErr \"Inconsistent\"") -- FIXME, location: (2, MismatchedType "x")
+      parses1 0 `shouldBe` Left "I expected a value of Boolean type here, but x has Integer type." -- FIXME, location: (2, MismatchedType "x")
 
     it "can coerce values of compatible types" $ do
       let parses1 = parseI1 "if (pi = x) then 1 else 0"
