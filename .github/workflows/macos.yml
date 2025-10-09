@@ -192,6 +192,7 @@ jobs:
       run: |
         cd fractalstream-ui-wx
         stack build
+        mv `find . -name "FractalStream.app"` ../FractalStream.app
 
     - name: Sign app bundle
       env:
