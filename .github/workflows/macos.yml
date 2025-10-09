@@ -187,8 +187,6 @@ jobs:
         stack build --only-snapshot
 
     - name: Build FractalStream
-      env:
-        TARGET_BUNDLE_NAME: FractalStream-${{ runner.os }}-${{ github.sha }}-wx-${{ inputs.wxwidgets }}
       run: |
         cd fractalstream-ui-wx
         stack build
@@ -249,6 +247,8 @@ jobs:
         xcrun stapler staple "FractalStream.app"
 
     - name: Archive app bundle
+      env:
+        TARGET_BUNDLE_NAME: FractalStream-${{ runner.os }}-${{ github.sha }}-wx-${{ inputs.wxwidgets }}
       run: |
         zip -r $TARGET_BUNDLE_NAME.zip FractalStream.app
 
