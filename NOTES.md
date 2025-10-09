@@ -95,8 +95,8 @@ data AsString :: Symbol -> FSType -> Exp Type
 type instance Eval (AsString _ _) = String
 
 myStringyContext :: Context AsString MyEnvironment
-myStringyContext = "e^(pi i / 3)"
-                 # "|i|"
+myStringyContext = "𝑒^(π 𝑖 / 3)"
+                 # "|𝑖|"
                  # EmptyContext
 ```
 
@@ -135,11 +135,31 @@ well-typed.
 ## The `Code` AST
 
 The AST representing the code / commands in a FractalStream script is the
-`Code` datatype, defined in the `Language.Code` module. Much like `Value`s,
-each `Code` has a type parameter that defines both the resulting `FSType` of
-the command, and the `Environment` that the command requires. For example,
-the command `set z to e^(pi i / 3)` could have the type `Code '( '[ '("z", 'ComplexT) ]) 'VoidT` since it makes use of a complex-valued variable `z`, and produces
-no result value.
+`Code` datatype, defined in the `Language.Code` module. The `Code` type has
+a type parameter that defines the `Environment` that the command requires.
+For example, the command `z ⭠ 𝑒^(π 𝑖 / 3)` could have the type `Code '( '[ '("z", 'ComplexT) ])` since it makes use of a complex-valued variable `z`.
+
+## Two-stage parsers
+
+The `Value` and `Code` types offer some interesting challenges for parsing.
+The grammar of values and commands is mostly applicative, but does have
+some monadic aspects; for example, an incorrectly-typed value should cause
+the parse to fail, but the type of a value may depend on previous parses
+(for more on the difference between applicative and monadic parsers, see
+[this stackoverflow answer][https://stackoverflow.com/a/7863380]).
+
+We use a trick to split the simple applicative grammar of values and commands
+out from the more monadic behavior of typechecking and type inference. The
+grammars are defined in a straightforward applicative style using the [Text.Earley][https://hackage.haskell.org/package/Earley-0.13.0.1/docs/Text-Earley.html] package, but instead of the parser
+producing values of type `Value '(env,ty)`, they effectively produce polymorphic functions
+of type `forall env ty. KnownEnvironment env => TypeProxy ty -> M (Value '(env, ty))`
+where `M` is some monad that allows for failure and supports [`(<|>)`][https://hoogle.haskell.org/?hoogle=(%3C%7C%3E)]. This means that the first, applicative phase can succeed and then we can attempt
+to evaluate the resulting function at different types.
+
+This turned out to be a much cleaner solution that using a monadic parser to directly
+produce `Value '(env,ty)`s, or a previous two-stage solution that defined "untyped"
+variants of `Value` and `Code` along with shape and type inferrence over the
+untyped variants.
 
 ## Code effects
 
@@ -193,7 +213,7 @@ ensemble.
 
 Many values in FractalStream are *dynamic*, meaning that they can be
 updated by the user or by the running script. For example, the value
-of `C` in a `z^2 + C` Julia set script is dynamic, because we expect
+of `C` in a `z² + C` Julia set script is dynamic, because we expect
 the user will be able to change the value of `C` to inspect different
 Julia sets.
 
