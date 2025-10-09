@@ -14,7 +14,7 @@ viewers:
           d : ℝ ⭠ |z - twist_center|
           if d > r0 and d < r1 then
             theta : ℝ ⭠ 2 pi (d - r0) / (r1 - r0)
-            z ⭠ e^(i theta) (z - twist_center) + twist_center
+            z ⭠ 𝑒^(𝑖 theta) (z - twist_center) + twist_center
           k ⭠ k + 1
 
         if k = maxIters then
@@ -22,8 +22,8 @@ viewers:
         else
           c1 : Color ⭠ if im(z) > 0 then blue else yellow
           c2 : Color ⭠ if im(z) > 0 then green else red
-          s : ℝ ⭠ k + 1 - (log (log (|z|^2) / (2 log maxRadius))) / log 2
-          s ⭠ cos (s pi / 10)^2
+          s : ℝ ⭠ k + 1 - (log (log (|z|²) / (2 log maxRadius))) / log 2
+          s ⭠ cos (s π / 10)²
           output blend (s, c1, c2) to color
 
     tools:
@@ -50,8 +50,8 @@ viewers:
           z ⭠ f
           d : ℝ ⭠ |z - twist_center|
           if d > r0 and d < r1 then
-            theta : ℝ ⭠ 2 pi (d - r0) / (r1 - r0)
-            z ⭠ e^(i theta) (z - twist_center) + twist_center
+            theta : ℝ ⭠ 2π (d - r0) / (r1 - r0)
+            z ⭠ 𝑒^(𝑖 theta) (z - twist_center) + twist_center
           k ⭠ k + 1
 
         if k = maxIters then
@@ -59,8 +59,8 @@ viewers:
         else
           c1 : Color ⭠ if im(z) > 0 then blue else yellow
           c2 : Color ⭠ if im(z) > 0 then green else red
-          s : ℝ ⭠ k + 1 - (log (log (|z|^2) / (2 log maxRadius))) / log 2
-          s ⭠ cos (s pi / 10)^2
+          s : ℝ ⭠ k + 1 - (log (log (|z|²) / (2 log maxRadius))) / log 2
+          s ⭠ cos (s π / 10)²
           output blend (s, c1, c2) to color
 
     tools:
@@ -82,8 +82,8 @@ viewers:
                 z ⭠ f
                 d : ℝ ⭠ |z - twist_center|
                 if d > r0 and d < r1 then
-                  theta : ℝ ⭠ 2 pi (d - r0) / (r1 - r0)
-                  z ⭠ e^(i theta) (z - twist_center) + twist_center
+                  theta : ℝ ⭠ 2π (d - r0) / (r1 - r0)
+                  z ⭠ e^(𝑖 theta) (z - twist_center) + twist_center
                 draw line from z to prevZ
                 k ⭠ k + 1
 

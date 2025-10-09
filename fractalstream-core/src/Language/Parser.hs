@@ -41,7 +41,8 @@ ident c = isAlphaNum c || c == '_'
 
 opTokens :: [(String, Token)]
 opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
-  [ ("+", Plus), ("-", Minus), ("*", Times), ("/", Divide)
+  [ ("+", Plus), ("-", Minus), ("*", Times)
+  , ("//", IntegerDivide), ("/", Divide)
   , ("^", Caret), ("|", Bar), ("(", OpenParen), (")", CloseParen)
   , ("[", OpenBracket), ("]", CloseBracket)
   , ("{", OpenBrace), ("}", CloseBrace)
@@ -87,6 +88,9 @@ tokenize = \case
   -- Skip whitespace
   (c:cs) | isSpace c -> tokenize cs
 
+  -- Skip comments
+  ('#':_) -> []
+
   -- Tokenize negative numbers
   ('-':cs@(d:_))
     | isDigit d ->
@@ -109,6 +113,18 @@ tokenize = \case
                     in NumberF (read ds') : tokenize (dropWhile isDigit cs')
           cs' -> NumberI (read ds) : tokenize cs'
 
+  -- Tokenize the ⁻, ⁰, ¹, ², ³, ⁴, ⁵, ⁶, ⁷, ⁸, ⁹ superscripts
+  ('⁻':cs@(d:_))
+    | d `elem` superscripts ->
+        let ds  = takeWhile (`elem` superscripts) cs
+            cs' = dropWhile (`elem` superscripts) cs
+         in Caret : NumberI (negate $ superscriptNumber ds) : tokenize cs'
+  cs@(d:_)
+    | d `elem` superscripts ->
+        let ds  = takeWhile (`elem` superscripts) cs
+            cs' = dropWhile (`elem` superscripts) cs
+         in Caret : NumberI (superscriptNumber ds) : tokenize cs'
+
   -- Tokenize special operators
   cs | Just (tok, cs') <- longestMatchingOperator cs
        -> tok : tokenize cs'
@@ -125,6 +141,27 @@ tokenize = \case
   -- Otherwise, grab a junk character
   (c:cs) -> Junk c : tokenize cs
 
+superscripts :: String
+superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+superscriptNumber :: String -> Integer
+superscriptNumber = go 0
+  where
+    go acc = let next i = go (10 * acc + i)
+             in \case
+      [] -> acc
+      ('⁰':xs) -> next 0 xs
+      ('¹':xs) -> next 1 xs
+      ('²':xs) -> next 2 xs
+      ('³':xs) -> next 3 xs
+      ('⁴':xs) -> next 4 xs
+      ('⁵':xs) -> next 5 xs
+      ('⁶':xs) -> next 6 xs
+      ('⁷':xs) -> next 7 xs
+      ('⁸':xs) -> next 8 xs
+      ('⁹':xs) -> next 9 xs
+      _ -> error "should be impossible"
+
 tokenizeWithIndentation :: String -> [Token]
 tokenizeWithIndentation
          = ([Indent] ++) . (++ [Dedent])
@@ -132,8 +169,15 @@ tokenizeWithIndentation
          . block
          . map observeSpaces
          . filter (not . all isSpace)
+         . map dropComments
          . lines
   where
+    dropComments :: String -> String
+    dropComments = \case
+      []      -> []
+      ('#':_) -> []
+      (c:cs)  -> c : dropComments cs
+
     observeSpaces :: String -> (Int, String)
     observeSpaces s = (length (takeWhile isSpace s), dropWhile isSpace s)
 
@@ -161,6 +205,7 @@ data Token
   | Minus
   | Times
   | Divide
+  | IntegerDivide
   | Caret
   | Bar
   | Identifier String

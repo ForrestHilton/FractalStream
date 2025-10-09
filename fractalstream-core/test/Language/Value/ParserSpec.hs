@@ -64,6 +64,12 @@ spec = do
       parseI "3 ^ 2 ^ 3" `shouldBe` Right 6561
       parseI "(3 ^ 2) ^ 3" `shouldBe` Right 729
 
+    it "parses superscripts as exponents" $ do
+      parseI "3² + 1" `shouldBe` Right 10
+      parseI "2¹⁰" `shouldBe` Right 1024
+      parseF "2.0⁻¹" `shouldBe` Right 0.5
+      parseF "2⁻¹" `shouldBe` Right 0
+
     it "parses boolean expressions with expected precedence" $ do
       let parses1 = parseB "true or false and false"
           parses2 = parseB "(true or false) and false"
