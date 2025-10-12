@@ -19,8 +19,8 @@ extra-deps:
 - git: https://github.com/mgrabmueller/disassembler
   commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
 
-- git: https://codeberg.org/wxHaskell/wxHaskell.git
-  commit: 5ce677420cbc49bc810ee075922732ed0f3e838c
+- git: https://github.com/matt-noonan/wxHaskell-3.2.git
+  commit: de15548c6587891cca9228a8fedf2336c72a5f3b
   subdirs:
     - wx
     - wxcore
