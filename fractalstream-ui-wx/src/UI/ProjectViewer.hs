@@ -116,7 +116,8 @@ makeWxComplexViewer
     let requestRefresh = void (tryPutMVar offThreadRefresh ())
 
     -- Build the initial view model
-    model <- variable [value := Model (0,0) (1/128,1/128)]
+    let initialModel = Model (0,0) (1/128, 1/128)
+    model <- variable [value := initialModel]
 
     -- Get the tools
     let theTools = cvTools'
@@ -266,6 +267,7 @@ makeWxComplexViewer
                 paintToolLayer (modelToView midModel) (modelPixelDim midModel) cvGetDrawCommands dc
           ]
 
+    lastKnownMouse <- newIORef Nothing
 
     -- Set click and drag event handlers
     set p [ on mouse   := \case
@@ -361,6 +363,7 @@ makeWxComplexViewer
 
               MouseMotion pt modifiers | isNoShiftAltControlDown modifiers -> do
                 mpt <- viewToModel pt
+                writeIORef lastKnownMouse (Just mpt)
                 set status [text := show mpt]
                 propagateEvent
 
@@ -378,30 +381,49 @@ makeWxComplexViewer
           ]
 
     WX.windowOnScroll p $ \scroll -> do
-      let (axis, b) = case scroll of
-            WX.ScrollLineUp   ax _ -> (Just ax, False)
-            WX.ScrollLineDown ax _ -> (Just ax, True)
-            _ -> (Nothing, False)
-      case axis of
-        Just WX.Vertical -> do
-          get currentToolIndex value >>= \case
-            Just {} -> propagateEvent
-            Nothing -> do
+      let mb = case scroll of
+            WX.ScrollLineUp   WX.Vertical _ -> Just False
+            WX.ScrollLineDown WX.Vertical _ -> Just True
+            _ -> Nothing
+      case mb of
+        Just b -> get currentToolIndex value >>= \case
+          Just {} -> propagateEvent
+          Nothing -> do
 
-                    oldModel <- get model value
-                    Size { sizeW = w, sizeH = h } <- get f clientSize
-                    let (px, py) = modelPixelDim oldModel
-                        speed = 1.1
-                        scale = if b then speed else 1.0 / speed
-                    set model [value := oldModel
-                                { modelPixelDim = (px * scale, py * scale)
-                                }]
-                    get currentTile value >>= cancelTile
-                    renderAction <- cvGetFunction
-                    newViewerTile <- renderTile' renderId renderAction (w, h) model
-                    set currentTile [value := newViewerTile]
-                    startAnimatingFrom oldModel
-                    triggerRepaint
+            oldModel <- get model value
+            Size { sizeW = w, sizeH = h } <- get f clientSize
+            let (px, py) = modelPixelDim oldModel
+                speed = 1.05
+                scale = if b then speed else 1.0 / speed
+            {-
+            -- This *seems* like it should work to get the position of the
+            -- mouse, based on similar code in wxcore's Events module for
+            -- getting the coordinates of mouse events. But no luck, so
+            -- for now we're just stealing the last known mouse coordinate.
+            -- FIXME
+            ptrLoc' <- wxcGetMousePosition
+            ptrLoc <- windowCalcUnscrolledPosition (objectCast p) ptrLoc'
+            (pmx, pmy) <- viewToModel ptrLoc
+            -}
+            -- Calculate the new model center, so that the model coordinates of
+            -- the pointer are the same in the new model and the old model.
+            readIORef lastKnownMouse >>= \case
+              Nothing -> propagateEvent
+              Just (pmx, pmy) -> do
+                let (cmx, cmy) = modelCenter oldModel
+                    cmx' = pmx + (cmx - pmx) * scale
+                    cmy' = pmy + (cmy - pmy) * scale
+
+                set model [value := oldModel
+                           { modelPixelDim = (px * scale, py * scale)
+                           , modelCenter = (cmx', cmy')
+                           }]
+                get currentTile value >>= cancelTile
+                renderAction <- cvGetFunction
+                newViewerTile <- renderTile' renderId renderAction (w, h) model
+                set currentTile [value := newViewerTile]
+                startAnimatingFrom oldModel
+                triggerRepaint
 
         _ -> propagateEvent
 
@@ -520,7 +542,7 @@ makeWxComplexViewer
     viewMenu <- menuPane [text := "&Viewer"]
     menuItem viewMenu [ text := "Reset view\t^"
                       , on command := do
-                          set model [ value := Model (0,0) (1/128,1/128) ]
+                          set model [ value := initialModel ]
                           requestRefresh
                       ]
     menuItem viewMenu [ text := "Clone viewer\t2"
