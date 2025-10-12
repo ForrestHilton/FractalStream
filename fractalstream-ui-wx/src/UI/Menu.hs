@@ -2,15 +2,15 @@ module UI.Menu
   ( makeMenuBar
   ) where
 
-import FractalStream.Prelude
 import FractalStream.Metadata
 
 import UI.ProjectActions
 
-import qualified System.Info as Info
-
 import Graphics.UI.WX hiding (when)
 
+-- | Make a standard menu bar for `f`, plus any additional
+-- menus we are given. Apparently this should be run after
+-- setting the layout of `f`?
 makeMenuBar :: ProjectActions -> Frame a -> [Menu ()] -> IO ()
 makeMenuBar ProjectActions{..} f addlMenus = do
 
@@ -33,9 +33,7 @@ makeMenuBar ProjectActions{..} f addlMenus = do
                , help := "Modify an existing FractalStream project"
                , on command := getProject "Edit" projectEdit ]
 
-  when (True || Info.os /= "darwin") $ do
-    void $ menuQuit prj [ text := "&Quit"
-                        , help := "Quit FractalStream" ]
+  _quit <- menuQuit prj [ text := "Quit FractalStream" ]
 
   -- Build the help menu
   hlp   <- menuHelp      [ text := "&Help" ]
@@ -45,7 +43,7 @@ makeMenuBar ProjectActions{..} f addlMenus = do
 
   set f [ menuBar := menuBarItems
         , on (menu about) :=
-            infoDialog f "About FractalStream" $ unlines
-              ("Contributors:" : contributors ++
-               ["", "Build info:", gitBranch ++ "@" ++ take 8 gitHash])
+          infoDialog f "About FractalStream" $ unlines
+          ("Contributors:" : contributors ++
+            ["", "Build info:", gitBranch ++ "@" ++ take 8 gitHash])
         ]

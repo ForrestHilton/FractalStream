@@ -99,7 +99,7 @@ makeWxComplexViewer
                ]
     WX.windowOnClose f (set f [ visible := False ])
 
-    p <- panel f [ ]
+    p <- scrolledWindow f [ scrollRate := sz 10 10 ]
 
     -- Viewer status bar
     status <- statusField [ text := "Pointer location" ]
@@ -149,10 +149,12 @@ makeWxComplexViewer
     currentToolIndex <- variable [value := Nothing]
 
     let startAnimatingFrom oldModel = do
-            now <- getCurrentTime
-            img <- get savedTileImage value >>= traverse imageCopy
-            set lastTileImage [value := img]
-            set animate [value := Just (now, oldModel, img)]
+            alreadyAnimating <- isJust <$> get animate value
+            unless alreadyAnimating $ do
+              now <- getCurrentTime
+              img <- get savedTileImage value >>= traverse imageCopy
+              set lastTileImage [value := img]
+              set animate [value := Just (now, oldModel, img)]
 
     -- Convert back and forth between viewport coordinates and coordinates
     -- in the underlying model (e.g. viewport coordinates to C-plane coordinates in
@@ -203,13 +205,10 @@ makeWxComplexViewer
                 gc <- graphicsContextCreate dc
                 newModel <- get model value
                 let midModel = interpolateModel t oldModel newModel
-                    withLayer (_opacity :: Double) action = do
-                      -- FIXME: this used to do a crossfade but
-                      -- graphicsContextBeginLayer seems to be gone
-                      -- from wxWidgets 3.2. What is the replacement?
-                      --graphicsContextBeginLayer gc opacity
+                    withLayer (opacity :: Double) action = do
+                      graphicsContextBeginLayer gc opacity
                       action
-                      --graphicsContextEndLayer gc
+                      graphicsContextEndLayer gc
                     restoringContext action = do
                       graphicsContextPushState gc
                       action
@@ -377,6 +376,35 @@ makeWxComplexViewer
               -- other mouse events
               _ -> propagateEvent
           ]
+
+    WX.windowOnScroll p $ \scroll -> do
+      let (axis, b) = case scroll of
+            WX.ScrollLineUp   ax _ -> (Just ax, False)
+            WX.ScrollLineDown ax _ -> (Just ax, True)
+            _ -> (Nothing, False)
+      case axis of
+        Just WX.Vertical -> do
+          get currentToolIndex value >>= \case
+            Just {} -> propagateEvent
+            Nothing -> do
+
+                    oldModel <- get model value
+                    Size { sizeW = w, sizeH = h } <- get f clientSize
+                    let (px, py) = modelPixelDim oldModel
+                        speed = 1.1
+                        scale = if b then speed else 1.0 / speed
+                    set model [value := oldModel
+                                { modelPixelDim = (px * scale, py * scale)
+                                }]
+                    get currentTile value >>= cancelTile
+                    renderAction <- cvGetFunction
+                    newViewerTile <- renderTile' renderId renderAction (w, h) model
+                    set currentTile [value := newViewerTile]
+                    startAnimatingFrom oldModel
+                    triggerRepaint
+
+        _ -> propagateEvent
+
 
     -- Add a timer which will check for repainting requests from WX, ~10Hz
     _ <- timer f [ interval := 100
