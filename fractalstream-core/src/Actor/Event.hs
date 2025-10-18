@@ -28,11 +28,14 @@ import Language.Code.Parser
 import Language.Code.InterpretIO
 
 import Data.DynamicValue
+import Data.Indexed.Functor
 
 import Data.IORef
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import Data.Aeson
+import Debug.Trace
 
 type Point = (Double, Double)
 
@@ -85,20 +88,32 @@ data ComplexParsedEventHandlers = ComplexParsedEventHandlers
   }
   deriving Show
 
+swap :: (a, b) -> (b, a)
+swap (x, y) = (y, x)
+
 toEventHandlers :: forall env
                  . EnvironmentProxy env
                 -> Splices
                 -> ParsedEventHandlers
-                -> Either String (EventHandlers env)
-toEventHandlers env splices ParsedEventHandlers{..} = do
-  let parse :: EnvironmentProxy e -> String -> Either String (HandlerCode env e)
-      parse e = parseCode (effs env) e splices
+                -> Either String (Set String, EventHandlers env)
+toEventHandlers env splices ParsedEventHandlers{..} = fmap swap $ flip runStateT Set.empty $ do
+  let parse :: EnvironmentProxy e -> String -> StateT (Set String) (Either String) (HandlerCode env e)
+      parse e i = do
+        c <- lift $ parseCode (effs env) e splices i
+        modify' (execState (indexedFoldM @Unit gatherUsedVarsInCode c))
+        vs <- get
+        traceM ("parsed `" ++ i ++ "`, vs=" ++ show vs)
+        pure c
 
       effs e = EP $ ParseEff (outputEffectParser e)
                   $ ParseEff drawEffectParser
                   $ NoEffs
 
-      mmaybe :: Maybe a -> (a -> Either String b) -> Either String (Maybe b)
+      mmaybe :: forall m a b
+              . Applicative m
+             => Maybe a
+             -> (a -> m b)
+             -> m (Maybe b)
       mmaybe m f = maybe (pure Nothing) (fmap Just . f) m
 
   ehOnClick <- mmaybe pehOnClick $ \(x, y, code) ->
@@ -146,12 +161,12 @@ bind :: String
      -> TypeProxy ty
      -> EnvironmentProxy env
      -> (forall name. (KnownSymbol name, NotPresent name env)
-        => EnvironmentProxy ( '(name, ty) ': env) -> Either String t)
-     -> Either String t
+        => EnvironmentProxy ( '(name, ty) ': env) -> StateT s (Either String) t)
+     -> StateT s (Either String) t
 bind nameStr ty env k = case someSymbolVal nameStr of
   SomeSymbol name -> case lookupEnv' name env of
     Absent' proof -> recallIsAbsent proof (k (bindNameEnv name ty proof env))
-    _ -> Left (symbolVal name <> " is defined twice")
+    _ -> lift $ Left (symbolVal name <> " is defined twice")
 
 noEventHandlers :: ParsedEventHandlers
 noEventHandlers = ParsedEventHandlers Nothing Nothing Nothing Nothing Map.empty Nothing Nothing Nothing

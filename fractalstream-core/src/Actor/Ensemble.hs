@@ -58,23 +58,21 @@ runEnsemble jit UI{..} Ensemble{..} = do
         Nothing -> k EmptyContext
         Just config -> do
           configUI <- runExceptTIO (allocateUIConstants (coContents config))
-          makeLayout project "Configuration" (toSomeDynamic configUI)
+          makeLayout project (coTitle config) (toSomeDynamic configUI)
           withDynamicBindings configUI k
 
   withSplicesFromSetup $ \splices -> do
     withContextFromConfiguration $ \config -> do
-      case lookupEnv' (Proxy @"[internal argument] #blockWidth") (contextToEnv config) of
-        Absent' pf1 -> recallIsAbsent pf1 $
-          case lookupEnv' (Proxy @"[internal argument] #blockHeight") (contextToEnv config) of
-            Absent' pf2 -> recallIsAbsent pf2 $
-              case lookupEnv' (Proxy @"[internal argument] #subsamples") (contextToEnv config) of
-                Absent' pf3 -> recallIsAbsent pf3 $ do
-                  forM_ ensembleViewers $ \viewer ->
-                    withComplexViewer' jit config splices viewer $ \vu cv' -> do
-                      makeViewer project vu cv'
-                _ -> error "internal error"
-            _ -> error "internal error"
-        _ -> error "internal error"
+      ProofNameIsAbsent <- assertAbsentInEnv' (Proxy @"[internal argument] #blockWidth")
+                                              (contextToEnv config) "internal error"
+      ProofNameIsAbsent <- assertAbsentInEnv' (Proxy @"[internal argument] #blockHeight")
+                                              (contextToEnv config) "internal error"
+      ProofNameIsAbsent <- assertAbsentInEnv' (Proxy @"[internal argument] #subsamples")
+                                              (contextToEnv config) "internal error"
+      forM_ ensembleViewers $ \viewer ->
+        withComplexViewer' jit config splices viewer $ \vu cv' -> do
+          makeViewer project vu cv'
+
 
 runExceptTIO :: ExceptT String IO a -> IO a
 runExceptTIO = fmap (either error id) . runExceptT

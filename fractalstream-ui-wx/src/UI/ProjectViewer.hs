@@ -8,7 +8,6 @@ module UI.ProjectViewer
 import FractalStream.Prelude hiding (get)
 
 import Language.Environment
-import Language.Type
 import Data.Color (Color, colorToRGB)
 import Control.Concurrent.MVar
 import Data.Indexed.Functor
@@ -31,13 +30,13 @@ import Data.IORef
 
 import Actor.UI
 import Actor.Tool
+import Actor.Layout
 import Actor.Viewer.Complex
 import Actor.Event (Event(..))
 import Language.Effect.Draw
 
 import Data.DynamicValue
-import Language.Value (Value, ValueF(..))
-import Language.Code (CodeF(..))
+import Language.Code (gatherUsedVarsInCode)
 import Task.Block (BlockComputeAction)
 
 import qualified Data.Set as Set
@@ -502,28 +501,6 @@ makeWxComplexViewer
     -- that variable changes.
     let usedVars = execState (indexedFoldM gatherUsedVarsInCode cvCode') Set.empty
 
-        gatherUsedVarsInCode :: CodeF effs Unit env
-                             -> State (Set String) ()
-        gatherUsedVarsInCode = \case
-          Let _ name v _ -> do
-            gatherUsedVars v
-            modify' (Set.delete (symbolVal name))
-          Set _ _ v -> gatherUsedVars v
-          Block{} -> pure ()
-          NoOp{} -> pure ()
-          DoWhile c _ -> gatherUsedVars c
-          IfThenElse tf _ _ -> gatherUsedVars tf
-          Effect{} -> pure () -- FIXME, should also inspect the effects
-
-        gatherUsedVars :: Value et -> State (Set String) ()
-        gatherUsedVars = indexedFoldM @UnitET gatherUsedVarsInValue
-
-        gatherUsedVarsInValue :: ValueF UnitET et -> State (Set String) ()
-        gatherUsedVarsInValue = \case
-          Var name _ _ -> modify' (Set.insert (symbolVal name))
-          LocalLet name _ _ _ _ _ -> modify' (Set.delete (symbolVal name))
-          _ -> pure ()
-
     fromContextM_ (\name _ v ->
                       when (symbolVal name `Set.member` usedVars)
                         (v `listenWith` (\_ _ -> requestRefresh))) cvConfig'
@@ -569,6 +546,28 @@ makeWxComplexViewer
                                    set currentToolIndex [value := Nothing]
                                ]
 
+    -- Build the configuration window for each tool
+    showToolConfig <- forM theTools $ \Tool{..} -> case toolConfig of
+      Nothing  -> pure (\_ -> pure ())
+      Just tcfg -> do
+        tf <- frame [ text := tiName toolInfo
+                    , visible := False ]
+        WX.windowOnClose tf (set tf [ visible := False ])
+        tlo <- generateWxLayout tf tcfg
+        set tf [ layout := tlo ]
+        pure (\viz -> set tf [ visible := viz ])
+
+    -- Change tracking for variables used in each tool
+    forM_ theTools $ \Tool{..} -> do
+     putStrLn ("TOOL: " ++ show toolInfo ++ ", vars=" ++ show toolVars)
+     case toolConfig of
+      Nothing -> pure ()
+      Just tconfig -> withDynamicBindings tconfig $
+        fromContextM_ (\name _ v ->
+                         when (symbolVal name `Set.member` toolVars) $ do
+                           putStrLn ("listening to " ++ symbolVal name)
+                           (v `listenWith` (\_ _ -> toolEventHandler Refresh)))
+
     -- Add each tool to the tool menu
     forM_  (zip [0..] . map toolInfo $ theTools) $ \(ix, ToolInfo{..}) -> menuRadioItem tools
           [ text := tiName ++ maybe "" (\c -> "\t" ++ (c : "")) tiShortcut
@@ -581,10 +580,12 @@ makeWxComplexViewer
                 Nothing -> pure ()
                 Just i -> do
                   toolEventHandler (theTools !! i) Deactivated
+                  (showToolConfig !! i) False
                   cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
               set toolStatus [text := tiName]
               set currentToolIndex [value := Just ix]
               toolEventHandler (theTools !! ix) Activated
+              (showToolConfig !! ix) True
               when (toolRefreshOnActivate (theTools !! ix)) $
                 toolEventHandler (theTools !! ix) Refresh
               cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
@@ -769,12 +770,6 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
 fsColorToWxColor :: Color -> WX.Color
 fsColorToWxColor c =
   let (r,g,b) = colorToRGB c in rgba r g b 255
-
-data Unit :: Environment -> Exp Type
-type instance Eval (Unit _) = ()
-
-data UnitET :: (Environment, FSType) -> Exp Type
-type instance Eval (UnitET _) = ()
 
 data History = History [Model] Model [Model]
 

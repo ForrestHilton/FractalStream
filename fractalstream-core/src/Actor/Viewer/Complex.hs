@@ -11,6 +11,7 @@ module Actor.Viewer.Complex
 import FractalStream.Prelude
 
 import Actor.Layout
+import Actor.Configuration
 import Actor.Tool
 import Actor.Event
 
@@ -68,6 +69,10 @@ data ViewerUIProperties = ViewerUIProperties
   , vpCanResize :: Bool
   }
 
+type InternalX  = "[internal] x"
+type InternalY  = "[internal] y"
+type InternalPx = "[internal] px"
+
 data ComplexViewer' where
   ComplexViewer' :: forall z px env. (KnownSymbol z, KnownSymbol px) =>
     { cvCenter'    :: UIValue (Complex Double)
@@ -78,9 +83,9 @@ data ComplexViewer' where
     , cvCode' :: Code '[Output '[ '("color", 'ColorT)]]
                    ( '(px, 'RealT)
                   ': '(z, 'ComplexT)
-                  ': '("[internal] x", 'RealT)
-                  ': '("[internal] y", 'RealT)
-                  ': '("[internal] px", 'RealT)
+                  ': '(InternalX, 'RealT)
+                  ': '(InternalY, 'RealT)
+                  ': '(InternalPx, 'RealT)
                   ': env)
     , cvTools' :: [Tool]
     , cvGetDrawCommands :: IO [[DrawCommand]]
@@ -122,8 +127,20 @@ bindContextIO name ty v ctx =
     Absent pf -> recallIsAbsent pf (pure (Bind name ty v ctx))
     _ -> error (symbolVal name ++ " is defined twice")
 
+declareIO :: forall a name ty env
+           . KnownSymbol name
+          => Proxy name
+          -> TypeProxy ty
+          -> EnvironmentProxy env
+          -> (NotPresent name env => EnvironmentProxy ( '(name,ty) ': env ) -> IO a)
+          -> IO a
+declareIO name ty env k =
+  case lookupEnv name ty env of
+    Absent pf -> recallIsAbsent pf (k $ BindingProxy name ty env)
+    _ -> error (symbolVal name ++ " is defined twice")
 
-withComplexViewer' :: ( NotPresent "[internal argument] #blockWidth" env
+withComplexViewer' :: forall env
+                    . ( NotPresent "[internal argument] #blockWidth" env
                       , NotPresent "[internal argument] #blockHeight" env
                       , NotPresent "[internal argument] #subsamples" env )
                    => ComplexViewerCompiler
@@ -136,150 +153,86 @@ withComplexViewer' :: ( NotPresent "[internal argument] #blockWidth" env
                    -> IO ()
 withComplexViewer' jit cvConfig' splices ComplexViewer{..} action = withEnvironment (contextToEnv cvConfig') $ do
   let cvPixelName = fromMaybe "#pixel" cvPixel
-      argX = Proxy @"[internal] x"
-      argY = Proxy @"[internal] y"
-      argPx = Proxy @"[internal] px"
+      argX = Proxy @InternalX
+      argY = Proxy @InternalY
+      argPx = Proxy @InternalPx
   case (someSymbolVal cvCoord, someSymbolVal cvPixelName) of
-    (SomeSymbol cvCoord', SomeSymbol cvPixel') -> do
-      let env0 = contextToEnv cvConfig'
-      case lookupEnv argPx RealType env0 of
-        Absent proof -> recallIsAbsent proof $ do
-          let env1 = BindingProxy argPx RealType env0
-          case lookupEnv argY ComplexType env1 of
-            Absent proofY -> recallIsAbsent proofY $ do
-              let env2 = BindingProxy argY RealType env1
-              case lookupEnv argX RealType env2 of
-                Absent proofX -> recallIsAbsent proofX $ do
-                  let env3 = BindingProxy argX RealType env2
-                  case lookupEnv cvCoord' ComplexType env3 of
-                    Absent proof' -> recallIsAbsent proof' $ do
-                      let env4 = BindingProxy cvCoord' ComplexType env3
-                      case lookupEnv cvPixel' RealType env4 of
-                        Absent proof'' -> recallIsAbsent proof'' $ do
-                          let env = BindingProxy cvPixel' RealType env4
+    (SomeSymbol (cvCoord' :: Proxy cvCoord'), SomeSymbol (cvPixel' :: Proxy cvPixel')) -> do
+     let env0 = contextToEnv cvConfig'
 
-                          cvCenter' <- newUIValue (valueOf cvCenter)
-                          cvPixelSize' <- newUIValue (valueOf cvPixelSize)
+     declareIO argPx RealType env0
+       $ \env1 -> declareIO argY RealType env1
+       $ \env2 -> declareIO argX RealType env2
+       $ \env3 -> declareIO cvCoord' ComplexType env3
+       $ \env4 -> declareIO cvPixel' RealType env4 $ \env -> do
 
-                          let vpTitle = cvTitle
-                              vpSize  = cvSize
-                              vpCanResize = cvCanResize
+      cvCenter' <- newUIValue (valueOf cvCenter)
+      cvPixelSize' <- newUIValue (valueOf cvPixelSize)
 
-                          let outputs = declare @"color" ColorType EmptyEnvProxy
-                              effectParser = EP
-                               $ ParseEff (outputEffectParser outputs)
-                               $ NoEffs
+      let vpTitle = cvTitle
+          vpSize  = cvSize
+          vpCanResize = cvCanResize
 
-                          case parseCode effectParser env splices cvCode of
-                            Left err -> error ("bad parse: " ++ show err)
-                            Right cvCode' -> do
-                              Found pfX <- pure (lookupEnv argX RealType env3)
-                              Found pfY <- pure (lookupEnv argY RealType env3)
-                              Found pfPx <- pure (lookupEnv argPx RealType env4)
-                              let realCode = complexToReal pfX pfY pfPx cvCode'
-                              withCompiledComplexViewer jit argX argY argPx argPx realCode $ \fun -> do
-                                let cvGetFunction = do
-                                      args <- mapContextM (\_ _ -> getDynamic) cvConfig'
-                                      pure $ \blockWidth blockHeight subsamples (dx :+ _dy) (x :+ y) buf -> do
-                                        let fullArgs = Bind argX RealType x
-                                                     $ Bind argY RealType y
-                                                     $ Bind argPx RealType dx
-                                                     $ args
-                                        fun (fromIntegral blockWidth) (fromIntegral blockHeight) (fromIntegral subsamples) fullArgs buf
-                                -- For tools, bind the viewer coordinate to the
-                                -- view's center point. Maybe this is going to be too
-                                -- confusing...
-                                cvToolContext
-                                  <-  bindContextIO cvCoord' ComplexType
-                                        (SomeDynamic cvCenter')
-                                  =<< bindContextIO cvPixel' RealType
-                                        (SomeDynamic cvPixelSize')
-                                  cvConfig'
+      let outputs = declare @"color" ColorType EmptyEnvProxy
+          effectParser = EP
+                       $ ParseEff (outputEffectParser outputs)
+                       $ NoEffs
 
-                                layersMVar <- newMVar (Map.empty :: Map Int [DrawCommand])
-                                dcChanged <- newMVar False
-                                let consDrawCmd c = case c of
-                                      Clear{} -> const (Just [])
-                                      _ -> Just . \case
-                                        Nothing -> [c]
-                                        Just cs -> c:cs
-                                    cvGetDrawCommands = do
-                                      tryTakeMVar dcChanged >>= \case
-                                        Nothing -> pure ()
-                                        Just _  -> putMVar dcChanged False
-                                      tryReadMVar layersMVar >>= \case
-                                        Nothing -> pure [[]]
-                                        Just m  -> pure (map reverse (Map.elems m))
+      case parseCode effectParser env splices cvCode of
+        Left err -> error ("bad parse: " ++ show err)
+        Right cvCode' -> do
+          Found pfX <- pure (lookupEnv argX RealType env3)
+          Found pfY <- pure (lookupEnv argY RealType env3)
+          Found pfPx <- pure (lookupEnv argPx RealType env4)
+          let realCode = complexToReal @_ @_ @cvCoord' @cvPixel' pfX pfY pfPx cvCode'
+          withCompiledComplexViewer jit argX argY argPx argPx realCode $ \fun -> do
+            let cvGetFunction = do
+                  args <- mapContextM (\_ _ -> getDynamic) cvConfig'
+                  pure $ \blockWidth blockHeight subsamples (dx :+ _dy) (x :+ y) buf -> do
+                    let fullArgs = Bind argX RealType x
+                                 $ Bind argY RealType y
+                                 $ Bind argPx RealType dx
+                                 $ args
+                    fun (fromIntegral blockWidth) (fromIntegral blockHeight)
+                        (fromIntegral subsamples) fullArgs buf
 
-                                    cvDrawCommandsChanged =
-                                      tryReadMVar dcChanged >>= \case
-                                        Nothing -> pure True
-                                        Just tf -> pure tf
+            -- For tools, bind the viewer coordinate to the
+            -- view's center point. Maybe this is going to be too
+            -- confusing...
 
-                                    drawTo :: Int -> EffectHandler Draw ScalarIORefM
-                                    drawTo n = Handle Proxy (inner n)
+            inheritedContext <- bindContextIO cvCoord' ComplexType (SomeDynamic cvCenter')
+                            =<< bindContextIO cvPixel' RealType (SomeDynamic cvPixelSize')
+                                cvConfig'
+            (cvGetDrawCommands, cvDrawCommandsChanged, drawTo) <- makeDrawCommandGetter
 
-                                    inner :: forall e
-                                           . Int
-                                          -> EnvironmentProxy e
-                                          -> Draw ScalarIORefM e
-                                          -> StateT (Context IORefTypeOfBinding e) IO ()
-                                    inner n _ cmd = do
-                                      let emit :: DrawCommand -> StateT (Context IORefTypeOfBinding e) IO ()
-                                          emit cmd' = liftIO $ do
-                                            modifyMVar_ dcChanged (pure . const True)
-                                            modifyMVar_
-                                              layersMVar
-                                              (pure . Map.alter (consDrawCmd cmd') n)
-                                      case cmd of
-                                        DrawPoint _env pv -> do
-                                          p <- eval' pv
-                                          emit (DrawPoint EmptyEnvProxy p)
-                                        DrawCircle _env doFill rv pv -> do
-                                          r    <- eval' rv
-                                          p    <- eval' pv
-                                          emit (DrawCircle EmptyEnvProxy doFill r p)
-                                        DrawLine _env fromv tov -> do
-                                          from <- eval' fromv
-                                          to   <- eval' tov
-                                          emit (DrawLine EmptyEnvProxy from to)
-                                        DrawRect _env doFill fromv tov -> do
-                                          from <- eval' fromv
-                                          to   <- eval' tov
-                                          emit (DrawRect EmptyEnvProxy doFill from to)
-                                        SetStroke _env cv -> do
-                                          c <- eval' cv
-                                          emit (SetStroke EmptyEnvProxy c)
-                                        SetFill _env cv -> do
-                                          c <- eval' cv
-                                          emit (SetStroke EmptyEnvProxy c)
-                                        Clear _env -> emit (Clear EmptyEnvProxy)
+            cvTools' <- forM cvTools $ \(ComplexTool ParsedTool{..}) -> do
 
-                                cvTools' <- forM cvTools $ \(ComplexTool ParsedTool{..}) -> do
-                                  -- FIXME: currently parses in the global context,
-                                  -- not the viewer context extended by the tool's
-                                  -- configuration context.
-                                  putStrLn ("building tool `" ++ tiName ptoolInfo ++ "`")
-                                  putStrLn ("environment: " ++ show (contextToEnv cvToolContext))
-                                  h <- case toEventHandlers (contextToEnv cvToolContext) splices ptoolEventHandlers of
-                                         Left err -> error ("toEventHandlers returned " ++ err)
-                                         Right ok -> pure ok
-                                  let toolInfo = ptoolInfo
-                                      toolDrawLayer = ptoolDrawLayer
-                                      toolConfig = Nothing -- TODO
-                                      toolRefreshOnActivate = ptoolRefreshOnActivate
-                                      toolEventHandler = const (pure ()) -- to be replaced below
-                                      tool = Tool{..}
-                                  pure (tool { toolEventHandler = handleEvent cvToolContext (drawTo ptoolDrawLayer) h })
+              toolConfig <- case ptoolConfig of
+                Nothing -> pure Nothing
+                Just cfg -> fmap Just . runExceptTIO $ allocateUIConstants (coContents cfg)
 
-                                action ViewerUIProperties{..} ComplexViewer'{..}
+              withDynamicBindings (fromMaybe (Vertical []) toolConfig) $ \innerContext -> do
+                -- FIXME: currently parses in the global context,
+                -- not the viewer context extended by the tool's
+                -- configuration context.
+                cvToolContext <- case innerContext <#> inheritedContext of
+                  Left msg -> error msg
+                  Right ctx -> pure ctx
+                putStrLn ("building tool `" ++ tiName ptoolInfo ++ "`")
+                putStrLn ("environment: " ++ show (contextToEnv cvToolContext))
+                (toolVars, h) <- case toEventHandlers
+                                      (contextToEnv cvToolContext)
+                                      splices ptoolEventHandlers of
+                       Left err -> error ("toEventHandlers returned " ++ err)
+                       Right ok -> pure ok
+                let toolInfo = ptoolInfo
+                    toolDrawLayer = ptoolDrawLayer
+                    toolRefreshOnActivate = ptoolRefreshOnActivate
+                    toolEventHandler = const (pure ()) -- to be replaced below
+                    tool = Tool{..}
+                pure (tool { toolEventHandler = handleEvent cvToolContext (drawTo ptoolDrawLayer) h })
 
-                        _ -> error "could not define viewer-internal pixel size"
-                    _ -> error "could not define viewer-internal Y coordinate"
-                _ -> error "could not define viewer-internal X coordinate"
-
-            _ -> error (cvCoord ++ " defined in both the viewer and the configuration")
-        _ -> error (cvPixelName ++ " defined in both the viewer and the configuration")
+            action ViewerUIProperties{..} ComplexViewer'{..}
 
 newtype ComplexViewerCompiler = ComplexViewerCompiler
   { withCompiledComplexViewer
@@ -310,13 +263,13 @@ newtype ComplexViewerCompiler = ComplexViewerCompiler
   }
 
 
-complexToReal :: ( KnownEnvironment env
-                 , KnownSymbol reZ, KnownSymbol imZ, KnownSymbol vpx
+complexToReal :: forall eff env z px
+               . ( KnownEnvironment env
                  , KnownSymbol z, KnownSymbol px
                  , NotPresent z env, NotPresent px ( '(z, 'ComplexT) ': env ) )
-              => NameIsPresent reZ 'RealT env
-              -> NameIsPresent imZ 'RealT env
-              -> NameIsPresent vpx 'RealT ( '(z, 'ComplexT) ': env )
+              => NameIsPresent InternalX 'RealT env
+              -> NameIsPresent InternalY 'RealT env
+              -> NameIsPresent InternalPx 'RealT ( '(z, 'ComplexT) ': env )
               -> Code eff ( '(px, 'RealT) ': '(z, 'ComplexT) ': env )
               -> Code eff env
 complexToReal reZ imZ vpx =
@@ -326,3 +279,69 @@ complexToReal reZ imZ vpx =
       px = Var Proxy RealType vpx
   in  let_ z
     . let_ px
+
+consDrawCmd :: Draw_ value code env
+            -> Maybe [Draw_ value code env]
+            -> Maybe [Draw_ value code env]
+consDrawCmd = \case
+  Clear{} -> const (Just [])
+  c -> Just . \case
+    Nothing -> [c]
+    Just cs -> c:cs
+
+makeDrawCommandGetter :: IO (IO [[DrawCommand]], IO Bool, Int -> EffectHandler Draw ScalarIORefM)
+makeDrawCommandGetter = do
+  layersMVar <- newMVar (Map.empty :: Map Int [DrawCommand])
+  dcChanged <- newMVar False
+  let drawTo :: Int -> EffectHandler Draw ScalarIORefM
+      drawTo n = Handle Proxy (inner n)
+
+      inner :: forall e
+             . Int
+            -> EnvironmentProxy e
+            -> Draw ScalarIORefM e
+            -> StateT (Context IORefTypeOfBinding e) IO ()
+      inner n _ cmd = do
+        let emit :: DrawCommand -> StateT (Context IORefTypeOfBinding e) IO ()
+            emit cmd' = liftIO $ do
+              modifyMVar_ dcChanged (pure . const True)
+              modifyMVar_ layersMVar (pure . Map.alter (consDrawCmd cmd') n)
+        case cmd of
+          DrawPoint _env pv -> do
+            p <- eval' pv
+            emit (DrawPoint EmptyEnvProxy p)
+          DrawCircle _env doFill rv pv -> do
+            r    <- eval' rv
+            p    <- eval' pv
+            emit (DrawCircle EmptyEnvProxy doFill r p)
+          DrawLine _env fromv tov -> do
+            from <- eval' fromv
+            to   <- eval' tov
+            emit (DrawLine EmptyEnvProxy from to)
+          DrawRect _env doFill fromv tov -> do
+            from <- eval' fromv
+            to   <- eval' tov
+            emit (DrawRect EmptyEnvProxy doFill from to)
+          SetStroke _env cv -> do
+            c <- eval' cv
+            emit (SetStroke EmptyEnvProxy c)
+          SetFill _env cv -> do
+            c <- eval' cv
+            emit (SetStroke EmptyEnvProxy c)
+          Clear _env -> emit (Clear EmptyEnvProxy)
+
+  let getDrawCommands = do
+        tryTakeMVar dcChanged >>= \case
+          Nothing -> pure ()
+          Just _  -> putMVar dcChanged False
+        tryReadMVar layersMVar >>= \case
+          Nothing -> pure [[]]
+          Just m  -> pure (map reverse (Map.elems m))
+
+      drawCommandsChanged = tryReadMVar dcChanged >>= \case
+        Nothing -> pure True
+        Just tf -> pure tf
+  pure (getDrawCommands, drawCommandsChanged, drawTo)
+
+runExceptTIO :: ExceptT String IO a -> IO a
+runExceptTIO = fmap (either error id) . runExceptT

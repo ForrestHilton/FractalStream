@@ -7,6 +7,8 @@ module Actor.Tool
   , ComplexTool(..)
   ) where
 
+import FractalStream.Prelude
+
 import Actor.Configuration
 import Actor.Event
 import Actor.Layout
@@ -28,6 +30,7 @@ data Tool = Tool
   , toolRefreshOnActivate :: Bool
   , toolConfig :: Maybe (Layout ConstantExpression)
   , toolEventHandler :: Event -> IO ()
+  , toolVars :: Set String
   }
 
 data ToolInfo = ToolInfo
