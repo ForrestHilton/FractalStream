@@ -10,7 +10,6 @@ import FractalStream.Prelude hiding (get)
 import Language.Environment
 import Data.Color (Color, colorToRGB)
 import Control.Concurrent.MVar
-import Data.Indexed.Functor
 
 import Graphics.UI.WX hiding (pt, glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
 import qualified Graphics.UI.WXCore.Events as WX
@@ -34,10 +33,10 @@ import Actor.Tool
 import Actor.Layout
 import Actor.Viewer.Complex
 import Actor.Event (Event(..))
-import Language.Effect.Draw
+import Language.Draw
 
 import Data.DynamicValue
-import Language.Code (gatherUsedVarsInCode)
+import Language.Code (usedVarsInCode)
 import Task.Block (BlockComputeAction)
 
 import qualified Data.Set as Set
@@ -500,7 +499,7 @@ makeWxComplexViewer
 
     -- For each variable that the viewer code depends on, trigger a repaint whenever
     -- that variable changes.
-    let usedVars = execState (indexedFoldM gatherUsedVarsInCode cvCode') Set.empty
+    let usedVars = execState (usedVarsInCode cvCode') Set.empty
 
     fromContextM_ (\name _ v ->
                       when (symbolVal name `Set.member` usedVars)
@@ -565,14 +564,17 @@ makeWxComplexViewer
 
     -- Change tracking for variables used in each tool
     forM_ theTools $ \Tool{..} -> do
-     putStrLn ("TOOL: " ++ show toolInfo ++ ", vars=" ++ show toolVars)
      case toolConfig of
       Nothing -> pure ()
       Just tconfig -> withDynamicBindings tconfig $
         fromContextM_ (\name _ v ->
                          when (symbolVal name `Set.member` toolVars) $ do
-                           putStrLn ("listening to " ++ symbolVal name)
-                           (v `listenWith` (\_ _ -> toolEventHandler Refresh)))
+                           (v `listenWith` (\_ _ -> do
+                                               -- Don't run the refresh handler here,
+                                               -- we could deadlock since it will also
+                                               -- want to access this variable. Just
+                                               -- queue up a refresh for later.
+                                               void $ tryPutMVar needToSendRefreshEvent ())))
 
     -- Add each tool to the tool menu
     forM_  (zip [0..] . map toolInfo $ theTools) $ \(ix, ToolInfo{..}) -> menuRadioItem tools

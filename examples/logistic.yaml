@@ -22,7 +22,7 @@ viewer:
         k <- k + 1
         if |x - x0| < best then
           best <- |x - x0|
-      output blend(best / outer, white, black) to color
+      color <- blend(best / outer, white, black)
 
 configuration:
   title: Configuration

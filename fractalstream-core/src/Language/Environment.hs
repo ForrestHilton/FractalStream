@@ -314,7 +314,7 @@ removeName :: forall name t env
 removeName _ = trustMe
 
 bindingEvidence :: forall name t env
-                 . (Required name env ~ t, NotPresent name (env `Without` name))
+                 . (Required name env ~ t) -- , NotPresent name (env `Without` name))
                 => NameIsPresent name t env
 bindingEvidence = trustMe
 

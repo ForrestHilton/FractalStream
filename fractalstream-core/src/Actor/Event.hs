@@ -15,10 +15,6 @@ module Actor.Event
 
 import FractalStream.Prelude
 
-import Language.Effect
-import Language.Effect.Output
-import Language.Effect.Draw
-
 import Language.Type
 import Language.Environment
 import Language.Value.Evaluator (HaskellTypeOfBinding)
@@ -26,16 +22,15 @@ import Language.Code
 import Language.Value.Parser
 import Language.Code.Parser
 import Language.Code.InterpretIO
+import Language.Draw
 
 import Data.DynamicValue
-import Data.Indexed.Functor
 
 import Data.IORef
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import Data.Aeson
-import Debug.Trace
 
 type Point = (Double, Double)
 
@@ -49,9 +44,6 @@ data Event
   | Activated
   | Deactivated
   deriving Show
-
-type HandlerEffects env = '[Output env, Draw]
-type HandlerCode out env = Code (HandlerEffects out) env
 
 data EventHandlers env = EventHandlers
   { ehOnClick       :: Maybe (SomeEventHandler env '[ 'RealT, 'RealT ])
@@ -97,17 +89,11 @@ toEventHandlers :: forall env
                 -> ParsedEventHandlers
                 -> Either String (Set String, EventHandlers env)
 toEventHandlers env splices ParsedEventHandlers{..} = fmap swap $ flip runStateT Set.empty $ do
-  let parse :: EnvironmentProxy e -> String -> StateT (Set String) (Either String) (HandlerCode env e)
+  let parse :: EnvironmentProxy e -> String -> StateT (Set String) (Either String) (Code e)
       parse e i = do
-        c <- lift $ parseCode (effs env) e splices i
-        modify' (execState (indexedFoldM @Unit gatherUsedVarsInCode c))
-        vs <- get
-        traceM ("parsed `" ++ i ++ "`, vs=" ++ show vs)
+        c <- lift $ parseCode e splices i
+        modify' (execState (usedVarsInCode c))
         pure c
-
-      effs e = EP $ ParseEff (outputEffectParser e)
-                  $ ParseEff drawEffectParser
-                  $ NoEffs
 
       mmaybe :: forall m a b
               . Applicative m
@@ -372,7 +358,7 @@ combineEventHandlers (Right lhs) rhs = do
 
 handleEvent :: forall env
              . Context DynamicValue env
-            -> EffectHandler Draw ScalarIORefM
+            -> DrawHandler ScalarIORefM
             -> EventHandlers env
             -> Event
             -> IO ()
@@ -381,7 +367,7 @@ handleEvent ctx draw EventHandlers{..} =
            . Maybe (SomeEventHandler env args)
           -> ArgList args
           -> IO ()
-      run = maybe (\_ -> pure ()) (runEventHandler ctx draw)
+      run = maybe (\_ -> pure ()) (runEventHandler True ctx draw)
   in \case
     Click (x, y) ->
       run ehOnClick (Arg y $ Arg x $ EndOfArgs)
@@ -393,23 +379,22 @@ handleEvent ctx draw EventHandlers{..} =
       run ehOnDragDone (Arg y2 $ Arg x2 $ Arg y1 $ Arg x1 $ EndOfArgs)
     Timer t ->
       run (snd <$> Map.lookup t ehOnTimer) EndOfArgs
-    Refresh -> run ehOnRefresh EndOfArgs
+    Refresh ->
+      maybe (\_ -> pure ()) (runEventHandler False ctx draw) ehOnRefresh EndOfArgs
     Activated -> run ehOnActivated EndOfArgs
     Deactivated -> run ehOnDeactivated EndOfArgs
 
-type SomeEventHandler env args = SomeEventHandler' env env args
+data SomeEventHandler env args where
+  WithNoArgs :: forall env
+              . Code env
+             -> SomeEventHandler env '[]
 
-data SomeEventHandler' out env args where
-  WithNoArgs :: forall out env
-              . HandlerCode out env
-             -> SomeEventHandler' out env '[]
-
-  WithArg :: forall name ty out env args
+  WithArg :: forall name ty env args
            . (KnownSymbol name, NotPresent name env)
           => Proxy name
           -> TypeProxy ty
-          -> SomeEventHandler' out ( '(name, ty) ': env) args
-          -> SomeEventHandler' out env (ty ': args)
+          -> SomeEventHandler ( '(name, ty) ': env) args
+          -> SomeEventHandler env (ty ': args)
 
 data ArgList (args :: [FSType]) where
   EndOfArgs :: ArgList '[]
@@ -420,68 +405,53 @@ data ArgList (args :: [FSType]) where
 
 -- runEvt :: Handlers (HandlerEffects env0) ScalarIORefM
 --        -> Context IORefTypeOfBinding env
---        -> SomeEventHandler' env0 env args
+--        -> SomeEventHandler env0 env args
 --        -> ArgList args
 --       -> IO ()
-runEvt :: Handlers (HandlerEffects out) ScalarIORefM
+runEvt :: DrawHandler ScalarIORefM
        -> Context IORefTypeOfBinding env
-       -> SomeEventHandler' out env args
+       -> SomeEventHandler env args
        -> ArgList args
        -> IO ()
-runEvt handlers ctx eh args = case eh of
+runEvt draw ctx eh args = case eh of
   WithNoArgs code ->
-    void (runStateT (interpretToIO handlers code) ctx)
+    void (runStateT (interpretToIO draw code) ctx)
   WithArg name ty eh' -> case args of
     Arg arg args' -> do
       ref <- newIORef arg
       let ctx' = Bind name ty ref ctx
-      runEvt handlers ctx' eh' args'
+      runEvt draw ctx' eh' args'
 
-runEventHandler :: Context DynamicValue env
-                -> EffectHandler Draw ScalarIORefM
+runEventHandler :: Bool
+                -> Context DynamicValue env
+                -> DrawHandler ScalarIORefM
                 -> SomeEventHandler env args
                 -> ArgList args
                 -> IO ()
-runEventHandler ctx draw evth args = do
+runEventHandler allowUpdates ctx draw evth args = do
 
   -- Copy the current environment into a bunch of IORefs
   iorefs :: Context IORefTypeOfBinding env <-
     mapContextM (\_ _ d -> getDynamic d >>= newIORef) ctx
-
-  -- Build a handler for the Output effect that outputs values
-  -- into the corresponding IORef in `iorefs`.
-  let handleOutput :: forall e
-        . EnvironmentProxy e
-        -> Output env ScalarIORefM e
-        -> StateT (Context IORefTypeOfBinding e) IO ()
-      handleOutput _ (Output _ pf _ v) = do
-        x <- eval' v
-        let ioref = getBinding iorefs pf
-        liftIO (writeIORef ioref x)
-
-      outputHandler = Handle (Proxy @ScalarIORefM) handleOutput
-
-      handlers = Handler outputHandler
-               $ Handler draw
-               $ NoHandler
 
   -- Create the initial variable bindings
   inValues :: Context HaskellTypeOfBinding env <-
     mapContextM (\_ _ -> readIORef) iorefs
 
   -- Run the code and then read values back from the `iorefs`
-  runEvt handlers iorefs evth args
+  runEvt draw iorefs evth args
 
   outValues :: Context HaskellTypeOfBinding env <-
     mapContextM (\_ _ -> readIORef) iorefs
 
   -- Find values that were updated by an output effect, and
   -- update the corresponding dynamic values
-  let finalCtx :: Context ((HaskellTypeOfBinding :**: HaskellTypeOfBinding)
+  when allowUpdates $ do
+    let finalCtx :: Context ((HaskellTypeOfBinding :**: HaskellTypeOfBinding)
                                 :**: DynamicValue) env
-      finalCtx = zipContext (zipContext inValues outValues) ctx
-  fromContextM_ (\_ ty ((old, new), v) ->
-                    if Scalar ty old == Scalar ty new
-                    then pure ()
-                    else void (setDynamic v new))
-                finalCtx
+        finalCtx = zipContext (zipContext inValues outValues) ctx
+    fromContextM_ (\_ ty ((old, new), v) ->
+                     if Scalar ty old == Scalar ty new
+                     then pure ()
+                     else void (setDynamic v new))
+                  finalCtx

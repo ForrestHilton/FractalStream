@@ -89,13 +89,7 @@ library
                        Language.Value.Evaluator
                        Language.Value.Parser
                        Language.Value.Transform
-                       Language.Effect
-                       Language.Effect.Output
-                       Language.Effect.Draw
-                       Language.Effect.Render
-                       Language.Effect.ThrowEvent
-                       Language.Effect.Provide
-                       Language.Effect.List
+                       Language.Draw
                        Language.Parser
 
                        Project

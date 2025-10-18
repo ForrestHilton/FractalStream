@@ -16,11 +16,11 @@ viewer:
           k <- k + 1
 
         if k = maxIters then
-          output black to color
+          color <- black
         else
           c : Color <- if re(z) > 0 then red else if im(z) > 0 then yellow else blue
           s : R <- (cos (k pi / 10))^2
-          output blend (s, dark c, light c) to color
+          color <- blend (s, dark c, light c)
 
   tools:
     - name: Trace

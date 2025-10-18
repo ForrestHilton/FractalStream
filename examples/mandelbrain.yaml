@@ -31,14 +31,14 @@ viewers:
           c <- blue
         s : R <- k
         s <- (cos (s pi / 10))^2
-        output (if k = maxIters then black else blend (s, dark c, light c)) to color
+        color <- if k = maxIters then black else blend (s, dark c, light c)
 
     tools:
       - name: "Select parameter"
         shortcut: s
         actions:
           - event: click-or-drag
-            code: output a to selectedA
+            code: selectedA <- a
 
   - title: Newton's method dynamics
     style: complex-plane
@@ -71,7 +71,7 @@ viewers:
           c <- blue
         s : R <- k
         s <- (cos (s pi / 10))^2
-        output (if k = maxIters then black else blend (s, dark c, light c)) to color
+        color <- if k = maxIters then black else blend (s, dark c, light c)
 
     tools:
       - name: Trace
