@@ -9,6 +9,7 @@ module Language.Environment
   , Context(..)
   , type (:**:)
   , (#)
+  , (<#>)
   , contextToEnv
   , envToContext
   , envToContextM
@@ -51,6 +52,9 @@ module Language.Environment
   , isAbsent
   , recallIsAbsent
   , absentInTail
+  , assertAbsentInEnv
+  , assertAbsentInEnv'
+  , ProofNameIsAbsent(..)
 
   , lookupEnv
   , LookupEnvResult(..)
@@ -80,6 +84,10 @@ import qualified Data.Map as Map
 -- as a type-level list of pairs; the rest of the API generally requires that
 -- each symbol appears one time at most.
 type Environment = [(Symbol, FSType)]
+
+type family Append (xs :: [(Symbol, FSType)]) (ys :: [(Symbol, FSType)]) :: [(Symbol, FSType)] where
+  Append '[] ys = ys
+  Append (x ': xs) ys = x ': Append xs ys
 
 ---------------------------------------------------------------------------------
 -- Value-level proxies for the environment
@@ -340,7 +348,10 @@ data LookupEnvResult' name env where
   Absent' :: forall name env. NameIsAbsent name env -> LookupEnvResult' name env
 
 -- | Look up a name in the environment, when we don't yet know what its type should be.
-lookupEnv' :: KnownSymbol name => Proxy name -> EnvironmentProxy env -> LookupEnvResult' name env
+lookupEnv' :: KnownSymbol name
+           => Proxy name
+           -> EnvironmentProxy env
+           -> LookupEnvResult' name env
 lookupEnv' name = \case
   BindingProxy name' ty' env' -> case sameSymbol name name' of
     Just Refl -> Found' ty' trustMe
@@ -348,6 +359,29 @@ lookupEnv' name = \case
       Found' ty _ -> Found' ty trustMe
       Absent' _   -> Absent' trustMe
   EmptyEnvProxy -> Absent' trustMe
+
+data ProofNameIsAbsent name env where
+  ProofNameIsAbsent :: forall name env. NotPresent name env
+                    => ProofNameIsAbsent name env
+
+assertAbsentInEnv :: (MonadFail m, KnownSymbol name)
+                  => Proxy name
+                  -> TypeProxy t
+                  -> EnvironmentProxy env
+                  -> String
+                  -> m (ProofNameIsAbsent name env)
+assertAbsentInEnv name t env msg = case lookupEnv name t env of
+  Absent pf -> pure (recallIsAbsent pf ProofNameIsAbsent)
+  _ -> fail msg
+
+assertAbsentInEnv' :: (MonadFail m, KnownSymbol name)
+                   => Proxy name
+                   -> EnvironmentProxy env
+                   -> String
+                   -> m (ProofNameIsAbsent name env)
+assertAbsentInEnv' name env msg = case lookupEnv' name env of
+  Absent' pf -> pure (recallIsAbsent pf ProofNameIsAbsent)
+  _ -> fail msg
 
 ---------------------------------------------------------------------------------
 -- Concatenating environments
@@ -385,6 +419,23 @@ recallNotPresentInEither
 recallNotPresentInEither k =
   case (unsafeCoerce :: Dict () -> Dict (NotPresent name (xs `EnvAppend` ys))) Dict of
     Dict -> k
+
+-- | Append two contexts, if possible
+(<#>) :: forall a env1 env2
+       . Context a env1
+      -> Context a env2
+      -> Either String (Context a (env1 `Append` env2))
+ctx1 <#> ctx2 = go ctx1
+  where
+    go :: forall env. Context a env -> Either String (Context a (env `Append` env2))
+    go = \case
+      EmptyContext -> pure ctx2
+      Bind n t v ctx -> do
+        ctx' <- go ctx
+        case lookupEnv n t (contextToEnv ctx') of
+          Absent pf -> pure (recallIsAbsent pf $ Bind n t v ctx')
+          _ -> Left (symbolVal n ++ " is defined twice.")
+
 
 ---------------------------------------------------------------------------------
 -- Constraints to require that a certain name is or is not present

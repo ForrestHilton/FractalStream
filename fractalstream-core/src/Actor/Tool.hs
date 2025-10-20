@@ -7,6 +7,8 @@ module Actor.Tool
   , ComplexTool(..)
   ) where
 
+import FractalStream.Prelude
+
 import Actor.Configuration
 import Actor.Event
 import Actor.Layout
@@ -16,6 +18,7 @@ import Data.Aeson
 data ParsedTool = ParsedTool
   { ptoolInfo :: ToolInfo
   , ptoolDrawLayer :: Int
+  , ptoolRefreshOnActivate :: Bool
   , ptoolConfig :: Maybe Configuration
   , ptoolEventHandlers :: ParsedEventHandlers
   }
@@ -24,8 +27,10 @@ data ParsedTool = ParsedTool
 data Tool = Tool
   { toolInfo :: ToolInfo
   , toolDrawLayer :: Int
+  , toolRefreshOnActivate :: Bool
   , toolConfig :: Maybe (Layout ConstantExpression)
   , toolEventHandler :: Event -> IO ()
+  , toolVars :: Set String
   }
 
 data ToolInfo = ToolInfo
@@ -49,6 +54,7 @@ instance FromJSON (String -> String -> Either String RealTool) where
     tiShortHelp <- o .:? "short-help" .!= ""
     tiHelp <- o .:? "help" .!= ""
     let ptoolInfo = ToolInfo{..}
+    ptoolRefreshOnActivate <- o .:? "refresh-on-activation" .!= True
     ptoolConfig <- o .:? "configuration"
     ptoolDrawLayer <- o .:? "draw-to-layer" .!= 100
     handlers <- o .:? "actions" .!= []
@@ -65,6 +71,7 @@ instance FromJSON (String -> Either String ComplexTool) where
     tiShortHelp <- o .:? "short-help" .!= ""
     tiHelp <- o .:? "help" .!= ""
     let ptoolInfo = ToolInfo{..}
+    ptoolRefreshOnActivate <- o .:? "refresh-on-activation" .!= True
     ptoolConfig <- o .:? "configuration"
     ptoolDrawLayer <- o .:? "draw-to-layer" .!= 100
     handlers <- o .:? "actions" .!= []

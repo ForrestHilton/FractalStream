@@ -9,6 +9,10 @@ module Language.Code
   , transformValues
   , set
   , let_
+  , gatherUsedVarsInCode
+  , gatherUsedVarsInValue
+  , Unit
+  , UnitET
   ) where
 
 import FractalStream.Prelude
@@ -16,6 +20,7 @@ import FractalStream.Prelude
 import Language.Value
 import Language.Effect
 import Data.Indexed.Functor
+import qualified Data.Set as Set
 
 data SomeCode where
   SomeCode :: forall effs env. Code effs env -> SomeCode
@@ -217,3 +222,30 @@ set :: forall name env effs ty
     => Value '(env, ty)
     -> Code effs env
 set = Set bindingEvidence (Proxy @name)
+
+-- | Find all of the variables that this code depends on
+gatherUsedVarsInCode :: CodeF effs Unit env
+                     -> State (Set String) ()
+gatherUsedVarsInCode = \case
+  Let _ name v _ -> do
+    indexedFoldM @UnitET gatherUsedVarsInValue v
+    modify' (Set.delete (symbolVal name))
+  Set _ _ v -> indexedFoldM @UnitET gatherUsedVarsInValue v
+  Block{} -> pure ()
+  NoOp{} -> pure ()
+  DoWhile c _ -> indexedFoldM @UnitET gatherUsedVarsInValue c
+  IfThenElse tf _ _ -> indexedFoldM @UnitET gatherUsedVarsInValue tf
+  Effect{} -> pure () -- TODO
+
+-- | Find all of the variables that this value depends on
+gatherUsedVarsInValue :: ValueF UnitET et -> State (Set String) ()
+gatherUsedVarsInValue = \case
+  Var name _ _ -> modify' (Set.insert (symbolVal name))
+  LocalLet name _ _ _ _ _ -> modify' (Set.delete (symbolVal name))
+  _ -> pure ()
+
+data Unit :: Environment -> Exp Type
+type instance Eval (Unit _) = ()
+
+data UnitET :: (Environment, FSType) -> Exp Type
+type instance Eval (UnitET _) = ()
