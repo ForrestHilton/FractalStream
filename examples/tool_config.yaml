@@ -1,0 +1,83 @@
+viewer:
+  title: Julia set
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/128
+  code: |
+      k : Z <- 0
+      while k < max_iters and |z| < escape_radius
+        z <- z^2 + C
+        k <- k + 1
+      if k = max_iters then
+        output black to color
+      else
+        output blend ((k / max_iters)^p, dark blue, white) to color
+
+  tools:
+    - name: Demo
+      shortcut: x
+      configuration:
+        title: Demo tool
+        size: 400x200
+        vertical-contents:
+          - text-entry:
+              label: "R ="
+              value: "1"
+              type: R
+              variable: R
+          - text-entry:
+              label: "θ ="
+              value: "pi/4"
+              type: R
+              variable: theta
+      actions:
+        - event: refresh
+          code: |
+            erase
+            draw circle at 0 with radius R
+            draw line from 0 to R e^{i theta}
+        - event: deactivated
+          code: erase
+
+    - name: Trace
+      shortcut: t
+      actions:
+        - event: click-or-drag
+          code: |
+            prevZ : C <- z
+            k : Z <- 0
+            erase
+            while k < 100 and |z| < 10 escape_radius
+              prevZ <- z
+              draw point at z
+              z <- z^2 + C
+              draw line from z to prevZ
+              k <- k + 1
+
+configuration:
+  title: Configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "f(z) = z^2 +"
+        value: "-0.11 + 0.78i"
+        type: C
+        variable: C
+    - text-entry:
+        label: "Max. iterations:"
+        value: "100"
+        type: Z
+        variable: max_iters
+    - text-entry:
+        label: "Escape radius:"
+        value: 10
+        type: R
+        variable: escape_radius
+    - text-entry:
+        label: "Brightness: "
+        value: 0.5
+        type: R
+        variable: p

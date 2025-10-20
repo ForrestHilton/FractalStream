@@ -17,6 +17,7 @@ import qualified Graphics.UI.WXCore.Events as WX
 import qualified Graphics.UI.WX as WX
 import           Graphics.UI.WXCore.Draw
 import           Graphics.UI.WXCore.WxcClassTypes
+import           Graphics.UI.WXCore.WxcDefs
 import           Graphics.UI.WXCore.WxcTypes      (rgba)
 import           Graphics.UI.WXCore.WxcClassesAL
 import           Graphics.UI.WXCore.WxcClassesMZ
@@ -550,12 +551,17 @@ makeWxComplexViewer
     showToolConfig <- forM theTools $ \Tool{..} -> case toolConfig of
       Nothing  -> pure (\_ -> pure ())
       Just tcfg -> do
-        tf <- frame [ text := tiName toolInfo
-                    , visible := False ]
+        tf <- frameTool [ text := tiName toolInfo
+                        , visible := False
+                        , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+. wxCAPTION
+                        ] f
         WX.windowOnClose tf (set tf [ visible := False ])
         tlo <- generateWxLayout tf tcfg
-        set tf [ layout := tlo ]
-        pure (\viz -> set tf [ visible := viz ])
+        set tf [ layout := margin 10 $ fill $ tlo ]
+        pure (\viz -> do
+                 set tf [ visible := viz ]
+                 -- Un-steal focus from the config window
+                 when viz (set f [ visible := True ]))
 
     -- Change tracking for variables used in each tool
     forM_ theTools $ \Tool{..} -> do
