@@ -106,7 +106,6 @@ with obj action = do
 
   return result
 
-
 -- | Execute an action on a synchronized resource while
 --   preventing concurrent access to the resource.  synchedWith
 --   will wait until any running actions complete before

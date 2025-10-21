@@ -84,10 +84,6 @@ compileRenderer code = runExcept $
     function "kernel" (retParam : params) AST.void $ \(retPtr : blockSizeArg : subsamplesArg : dzArg : rawArgs) -> do
       getExtern <- getGetExtern
       traceM ("ok... retPtr = " ++ show retPtr)
-      --( Bind _ _ blockSizePtr
-      --  ( Bind _ _ subsamplesPtr
-      --    (Bind _ _ dzPtr
-      --       args))) <- allocaArgs (envProxy (Proxy @(RenderEnv env))) rawArgs
       blockSizePtr <- allocaArg IntegerType blockSizeArg `named` "set up environment"
       subsamplesPtr <- allocaArg IntegerType subsamplesArg
       dzPtr <- allocaArg ComplexType dzArg
@@ -110,14 +106,6 @@ compileRenderer code = runExcept $
         kPtr <- alloca AST.i32 Nothing 0
         xPtr <- alloca AST.double Nothing 0
         yPtr <- alloca AST.double Nothing 0
-
-  {-
-        outputPtr <- alloca (AST.ArrayType 3 AST.i8) Nothing 0
-        outputOp <- PtrOp <$>
-                    (ColorOp <$> gep outputPtr [C.int32 0, C.int32 0]
-                             <*> gep outputPtr [C.int32 0, C.int32 1]
-                             <*> gep outputPtr [C.int32 0, C.int32 2])
--}
 
         -- index = 0;
         -- y = 0;
@@ -160,19 +148,11 @@ compileRenderer code = runExcept $
 
           -- Allocate a color pointer, pass in to compileCode,
           -- read components out into cr0, cg0, cb0
-          --(cr0, cg0, cb0) <- runReaderT (compileCode getExtern _ code) args >>= \case
-          --  ColorOp vr vg vb -> pure (vr, vg, vb)
-
           runReaderT (compileCode getExtern code) args
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
-{-
-          -- FIXME: output, outputOp
-          cr0 <- gep outputPtr [C.int32 0, C.int32 0] >>= (`load` 0)
-          cg0 <- gep outputPtr [C.int32 0, C.int32 1] >>= (`load` 0)
-          cb0 <- gep outputPtr [C.int32 0, C.int32 2] >>= (`load` 0)
--}
+
           cr <- zext cr0 AST.i32
           cg <- zext cg0 AST.i32
           cb <- zext cb0 AST.i32
@@ -353,14 +333,6 @@ compileRenderer' name _ _ _ _ _ code = runExcept $
         store accB 0 (C.int32 0)
         store kPtr 0 (C.int32 0)
 
-        {-
-        outputPtr <- alloca (AST.ArrayType 3 AST.i8) Nothing 0
-        outputOp <- PtrOp <$>
-                    (ColorOp <$> gep outputPtr [C.int32 0, C.int32 0]
-                             <*> gep outputPtr [C.int32 0, C.int32 1]
-                             <*> gep outputPtr [C.int32 0, C.int32 2])
-        -}
-
         br subsampleLoop
 
         --       for (k = 0; k < subsamples; ++k) {
@@ -384,12 +356,6 @@ compileRenderer' name _ _ _ _ _ code = runExcept $
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
 
-          -- output, outputOp
-  {-
-          cr0 <- gep outputPtr [C.int32 0, C.int32 0] >>= (`load` 0)
-          cg0 <- gep outputPtr [C.int32 0, C.int32 1] >>= (`load` 0)
-          cb0 <- gep outputPtr [C.int32 0, C.int32 2] >>= (`load` 0)
--}
           cr <- zext cr0 AST.i32
           cg <- zext cg0 AST.i32
           cb <- zext cb0 AST.i32
@@ -524,23 +490,7 @@ compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
     pure ()
 
   _ -> error "unsupported command"
-{-
-llvmHandlers :: forall output t m
-              . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m, KnownType t)
-             => (String -> Operand)
-             -> PtrOp t
-             -> Handlers '[Output '[ '(output, t)]] (OperandPtrContext m)
-llvmHandlers getExtern retPtr = Handler outputHandler NoHandler
-  where
-    outputHandler :: EffectHandler (Output '[ '(output, t)]) (OperandPtrContext m)
-    outputHandler = Handle Proxy $ \_env -> \case
-      Output _ _ _ v ->
-        case sameHaskellType (typeOfValue v) (typeProxy @t) of
-          Just Refl -> mdo
-            x <- value_ getExtern v
-            storeOperand x retPtr
-          Nothing -> pure () -- should be impossible
--}
+
 
 data OperandPtrContext :: (* -> *) -> Environment -> Exp *
 type instance Eval (OperandPtrContext m env) =

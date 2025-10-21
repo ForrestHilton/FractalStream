@@ -236,7 +236,7 @@ evaluator v0 ctx = case v0 of
     RGB r g b     -> rgbToColor ( round (255 * r ctx)
                                 , round (255 * g ctx)
                                 , round (255 * b ctx) )
-    Blend s c1 c2 -> mixColors (s ctx) (c2 ctx) (c1 ctx)
+    Blend s c1 c2 -> mixColors (s ctx) (c1 ctx) (c2 ctx)
 
     InvertRGB c   -> invertColor (c ctx)
 
