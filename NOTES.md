@@ -161,32 +161,6 @@ produce `Value '(env,ty)`s, or a previous two-stage solution that defined "untyp
 variants of `Value` and `Code` along with shape and type inferrence over the
 untyped variants.
 
-## Code effects
-
-In different situations, there may be different commands available to a
-FractalStream script. A tool may be allowed to issue drawing commands or
-change the values of parameters, but these kind of actions would not make
-sense for a dynamical plane viewer. We handle this by splitting different kinds of
-"extension commands" into `Effect`s, and script compilers can provide different
-effect handlers for different situations.
-
-The currently-used effects are:
-
-- `Language.Effect.Draw`: Commands for drawing on the window. For example, the
-trace tool uses this effect to draw a chain of line segments onto the window,
-following the dynamics.
-- `Language.Effect.Output`: Commands for producing additional values from
-a script. This is currently used by tools as a mechanism for altering
-configuration values.
-
-There are a number of experimental effects that are not fully implemented yet,
-including:
-
-- `Language.Effect.Provide`: An effect that provides a new value
-- `Language.Effect.List`: Commands for operating on lists of data
-- `Language.Effect.Render`: Commands for drawing into and using bitmaps
-- `Language.Effect.ThrowEvent`: Commands for generating new UI events
-
 ## User interface events
 
 FractalStream has its own model of UI events (e.g. "click", "drag", "pinch", "a button was pressed"), defined in the `Event` module. Each event is annotated with an

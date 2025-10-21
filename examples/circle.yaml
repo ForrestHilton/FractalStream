@@ -8,8 +8,8 @@ viewer:
   initial-pixel-size: 1/128
   code: |
       if |z| < 1 then
-        output red to color
+        color <- red
       else if im z > 0 then
-        output green to color
+        color <- green
       else
-        output blue to color
+        color <- blue

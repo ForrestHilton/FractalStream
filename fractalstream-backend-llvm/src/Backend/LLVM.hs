@@ -39,7 +39,6 @@ import Language.Value.Evaluator (HaskellTypeOfBinding)
 import Language.Value.Transform
 import Language.Code
 import Language.Code.Parser
-import Language.Effect.Output
 import Data.Color
 
 import qualified Data.Map as Map
@@ -148,6 +147,8 @@ withCompiledCode :: forall env
                     , NotPresent "x" (env `Without` "x")
                     , Required "y" env ~ 'RealT
                     , NotPresent "y" (env `Without` "y")
+                    , Required "color" env ~ 'ColorT
+                    , NotPresent "color" (env `Without` "color")
                     , NotPresent "#blockSize" env
                     , NotPresent "#subsamples" env
                     , NotPresent "#dz" env
@@ -157,8 +158,7 @@ withCompiledCode :: forall env
                  -> ((Ptr Word8 -> Int32 -> Int32 -> Ptr Double -> Int32 -> Double -> Double -> Double -> IO ()) -> IO ())
                  -> IO ()
 withCompiledCode env code run = do
-  let outputEnv = BindingProxy (Proxy @"color") ColorType EmptyEnvProxy
-  c <- case parseCode (EP $ ParseEff (outputEffectParser outputEnv) NoEffs) env Map.empty code of
+  c <- case parseCode env Map.empty code of
          Left e  -> error e
          Right c -> pure c
   m <- either error pure (compileRenderer c)
@@ -185,13 +185,14 @@ withCompiledCode env code run = do
                 let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
                 run (mkJX fn)
 
-withViewerCode' :: forall x y dx dy env t
+withViewerCode' :: forall x y dx dy output env t
                   . ( KnownEnvironment env
                     , NotPresent "[internal argument] #blockWidth" env
                     , NotPresent "[internal argument] #blockHeight" env
                     , NotPresent "[internal argument] #subsamples" env
                     , KnownSymbol x, KnownSymbol y
                     , KnownSymbol dx, KnownSymbol dy
+                    , KnownSymbol output
                     , Required x env ~ 'RealT
                     , NotPresent x (env `Without` x)
                     , Required y env ~ 'RealT
@@ -200,22 +201,25 @@ withViewerCode' :: forall x y dx dy env t
                     , NotPresent dx (env `Without` dx)
                     , Required dy env ~ 'RealT
                     , NotPresent dy (env `Without` dy)
+                    , Required output env ~ 'ColorT
+                    , NotPresent output (env `Without` output)
                     )
                  => LLVMJit
                  -> Proxy x
                  -> Proxy y
                  -> Proxy dx
                  -> Proxy dy
-                 -> Code '[Output '[ '("color", 'ColorT)]] env
+                 -> Proxy output
+                 -> Code env
                  -> ((Int32 -> Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
                       -> IO t)
                  -> IO t
-withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy c action = do
+withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy output c action = do
 
   let optimizedCode = transformValues (integerPowers . avoidSqrt) c
 
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
-  m <- either error pure (compileRenderer' (fromString name) x y dx dy optimizedCode)
+  m <- either error pure (compileRenderer' (fromString name) x y dx dy output optimizedCode)
   withContext $ \ctx ->
     withModuleFromAST ctx m $ \md -> do
     let pm = defaultCuratedPassSetSpec

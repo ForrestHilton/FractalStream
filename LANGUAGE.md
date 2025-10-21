@@ -207,11 +207,11 @@ else
 
 Some scripts will need to produce one or more values as a result. For
 example, scripts that are used to draw pictures must output a value
-called `color` to determine which color to draw. This is done using
-an `output` command:
+to determine which color to draw. This is done using normal assignment
+operators:
 
 ```
-output black to color
+color ⭠ black
 ```
 
 Putting everything together so far, we can make a basic script for
@@ -228,10 +228,19 @@ while |z| < 10 and k < 100
   k ⭠ k + 1
 
 if k = 100 then
-  output black to color
+  color ⭠ black
 else
-  output white to color
+  color ⭠ white
 ```
+
+Different scripts may have different expected outputs.
+
+- Viewer scripts are expected to set the `color` variable. Changes
+to other variables are ignored.
+
+- Event handlers in tool scripts can set any configuration value. This
+is useful for building tools that directly manipulate the configuration,
+such as selecting a parameter value.
 
 ### Drawing commands
 

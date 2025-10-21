@@ -12,9 +12,9 @@ viewer:
         z <- z^2 + C
         k <- k + 1
       if k = max_iters then
-        output black to color
+        color <- black
       else
-        output blend ((k / max_iters)^p, dark blue, white) to color
+        color <- blend ((k / max_iters)^p, dark blue, white)
 
   tools:
     - name: Demo
@@ -39,6 +39,10 @@ viewer:
             erase
             draw circle at 0 with radius R
             draw line from 0 to R e^{i theta}
+            # Refresh events aren't able to change
+            # configuration variables, so this next
+            # line will have no effect.
+            R <- R + 0.001
         - event: deactivated
           code: erase
 

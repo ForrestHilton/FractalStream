@@ -1,11 +1,6 @@
 {-# language RecursiveDo, DataKinds #-}
 module Language.Code.Parser
   ( parseCode
-  , EffectParser(..)
-  , EffectParsers(..)
-  , EffectParsers_(..)
-  --, uParseCode
-  --, uCode
   , Errs(..)
   ) where
 
@@ -16,33 +11,30 @@ import Language.Parser hiding (many)
 import Language.Value
 import Language.Value.Parser hiding (parseValueFromTokens)
 import Language.Code
+import Language.Draw
 
 import qualified Data.Set as Set
-import Data.Indexed.Functor (FIX)
 
-newtype EnvCode effs = EnvCode
-  (forall env. EnvironmentProxy env -> Errs (Code effs env))
+newtype EnvCode = EnvCode
+  (forall env. EnvironmentProxy env -> Errs (Code env))
 
-parseCode :: forall effs env
-           . EffectParsers effs
-          -> EnvironmentProxy env
+parseCode :: forall env
+           . EnvironmentProxy env
           -> Splices
           -> String
-          -> Either String (Code effs env)
-parseCode eps env splices input = do
-  EnvCode c <- parseEnvCode eps splices input
+          -> Either String (Code env)
+parseCode env splices input = do
+  EnvCode c <- parseEnvCode splices input
   case c env of
     Errs (Left errs) -> Left (init . unlines . Set.toList . Set.fromList $ errs)
     Errs (Right c')  -> pure c'
 
-parseEnvCode :: forall effs
-              . EffectParsers effs
-             -> Splices
+parseEnvCode :: Splices
              -> String
-             -> Either String (EnvCode effs)
-parseEnvCode eps splices input = do
+             -> Either String EnvCode
+parseEnvCode splices input = do
   let toks = tokenizeWithIndentation input
-  case fullParses (parser (codeGrammar eps splices)) toks of
+  case fullParses (parser (codeGrammar splices)) toks of
     ([], r)   -> Left ("no parse: " ++ show r)
     ([c], _)  -> pure c
     (_, r)    -> Left ("ambiguous parse: " ++ show r)
@@ -52,13 +44,15 @@ ident = tokenMatch $ \case
   Identifier n -> Just n
   _ -> Nothing
 
+tok :: String -> Prod r String Token ()
+tok s = tokenMatch $ \case
+  Identifier n | n == s -> Just ()
+  _ -> Nothing
 
-
-codeGrammar :: forall r effs
-             . EffectParsers effs
-            -> Splices
-            -> Grammar r (Prod r String Token (EnvCode effs))
-codeGrammar (EP effectParsers) splices = mdo
+codeGrammar :: forall r
+             . Splices
+            -> Grammar r (Prod r String Token EnvCode)
+codeGrammar splices = mdo
 
   toplevel <- ruleChoice
     [ block
@@ -122,7 +116,7 @@ codeGrammar (EP effectParsers) splices = mdo
     ]
 
   value <- valueGrammar splices
-
+{-
   let parseEffectFrom :: forall effs'
                        . EffectParsers_ effs' effs
                       -> Grammar r (Prod r String Token (EnvCode effs))
@@ -134,20 +128,78 @@ codeGrammar (EP effectParsers) splices = mdo
         r <- grammar value (convert <$> block)
         rs <- parseEffectFrom etc
         rule ((mkEffect eff <$> r) <|> rs)
+-}
+  effect <- ruleChoice
+    [ toplevelDrawCommand
+    , listCommand
+    ]
 
-  effect <- parseEffectFrom effectParsers
+  toplevelDrawCommand <- ruleChoice
+    [ (tok "draw" *> drawCommand <* token Newline)
+    , (tok "use" *> penCommand <* token Newline)
+    , (tok "erase" *> eraseCommand <* token Newline)
+    ]
+
+  eraseCommand <- ruleChoice [pure mkClear]
+
+  drawCommand <- ruleChoice
+    [ mkDrawPoint <$> ((tok "point" *> tok "at") *> value)
+    , mkDrawCircle <$> (isJust <$> optional (tok "filled"))
+                   <*> ((tok "circle" *> tok "at") *> value)
+                   <*> ((tok "with" *> tok "radius") *> value)
+    , mkDrawRect <$> (isJust <$> optional (tok "filled"))
+                 <*> ((tok "rectangle" *> tok "from") *> value)
+                 <*> (tok "to" *> value)
+    , mkDrawLine <$> ((tok "line" *> tok "from") *> value)
+                 <*> (tok "to" *> value)
+    ]
+
+  strokeOrLine <- ruleChoice
+    [ tok "stroke", tok "line" ]
+
+  penCommand <- ruleChoice
+    [ mkSetFill   <$> (value <* (tok "for" *> tok "fill"))
+    , mkSetStroke <$> (value <* (tok "for" *> strokeOrLine))
+    ]
+
+  startOrEnd <- ruleChoice
+    [ tok "start" $> Start
+    , tok "end" $> End ]
+
+  listCommand <- ruleChoice
+    [ mkListInsert
+      <$> (tok "insert" *> value <* tok "at")
+      <*> (startOrEnd <* tok "of")
+      <*> (ident <* token Newline)
+    , mkListRemoveSome
+      <$> (tok "remove" *> tok "each" *> ident)
+      <*> (tok "matching" *> value)
+      <*> (tok "from" *> ident <* token Newline)
+    , mkListRemoveAll
+      <$> (tok "remove" *> tok "all" *> tok "items" *> tok "from" *> ident <* token Newline)
+    , mkListFor
+      <$> (tok "for" *> tok "each" *> ident)
+      <*> (tok "in" *> ident)
+      <*> (tok "do" *> token Newline *> block)
+    , mkListWith
+      <$> (tok "with" *> tok "first" *> ident)
+      <*> (tok "matching" *> value)
+      <*> (tok "in" *> ident)
+      <*> (tok "do" *> token Newline *> block)
+      <*> optional (tok "else" *> token Newline *> block)
+    ]
 
   pure toplevel
 
-atEnv :: EnvironmentProxy env -> EnvCode eff -> Errs (Code eff env)
+atEnv :: EnvironmentProxy env -> EnvCode -> Errs (Code env)
 atEnv env (EnvCode f) = f env
 
-mkBlock :: [EnvCode eff] -> EnvCode eff
+mkBlock :: [EnvCode] -> EnvCode
 mkBlock body = EnvCode $ \env ->
   withEnvironment env $ do
     Block <$> traverse (atEnv env) body
 
-mkLet :: String -> FSType -> TypedValue -> EnvCode eff -> EnvCode eff
+mkLet :: String -> FSType -> TypedValue -> EnvCode -> EnvCode
 mkLet n t v c = EnvCode $ \env -> withType t $ \ty ->
   withEnvironment env $ do
     -- Get a proof that `name` is not already bound in the environment `env`.
@@ -163,7 +215,7 @@ mkLet n t v c = EnvCode $ \env -> withType t $ \ty ->
         let env' = BindingProxy name ty env
         Let pf name val <$> atEnv env' c
 
-mkSet :: String -> TypedValue -> EnvCode eff
+mkSet :: String -> TypedValue -> EnvCode
 mkSet n v = EnvCode $ \env ->
   withEnvironment env $ do
     SomeSymbol name <- pure (someSymbolVal n)
@@ -171,40 +223,161 @@ mkSet n v = EnvCode $ \env ->
       Found' ty pf -> Set pf name <$> atType v ty
       Absent' _ -> Errs $ Left [n ++ " is not in scope here."]
 
-mkWhile :: TypedValue -> EnvCode eff -> EnvCode eff
+mkWhile :: TypedValue -> EnvCode -> EnvCode
 mkWhile cond body = EnvCode $ \env -> do
   withEnvironment env $
     IfThenElse <$> atType cond BooleanType
                <*> (DoWhile <$> atType cond BooleanType <*> atEnv env body)
                <*> pure NoOp
 
-mkDoWhile :: EnvCode eff -> TypedValue -> EnvCode eff
+mkDoWhile :: EnvCode -> TypedValue -> EnvCode
 mkDoWhile body cond = EnvCode $ \env -> do
   withEnvironment env $
     DoWhile <$> atType cond BooleanType <*> atEnv env body
 
-mkUntil :: TypedValue -> EnvCode eff -> EnvCode eff
+mkUntil :: TypedValue -> EnvCode -> EnvCode
 mkUntil cond body = EnvCode $ \env -> do
   withEnvironment env $
     IfThenElse <$> atType cond BooleanType
                <*> (DoWhile <$> (Not <$> atType cond BooleanType) <*> atEnv env body)
                <*> pure NoOp
 
-mkDoUntil :: EnvCode eff -> TypedValue -> EnvCode eff
+mkDoUntil :: EnvCode -> TypedValue -> EnvCode
 mkDoUntil body cond = EnvCode $ \env -> do
   withEnvironment env $
     DoWhile <$> (Not <$> atType cond BooleanType) <*> atEnv env body
 
-mkIfThenElse :: TypedValue -> EnvCode eff -> EnvCode eff -> EnvCode eff
+mkIfThenElse :: TypedValue -> EnvCode -> EnvCode -> EnvCode
 mkIfThenElse cond yes no = EnvCode $ \env -> do
   withEnvironment env $
     IfThenElse <$> atType cond BooleanType
                <*> atEnv env yes
                <*> atEnv env no
 
-mkEffect :: HasEffect eff effs
-         => Proxy eff
-         -> EnvCodeOfEffect eff (FIX (CodeF effs))
-         -> EnvCode effs
-mkEffect eff (EnvCodeOfEffect f) = EnvCode $ \env -> withEnvironment env $
-  Effect eff Proxy <$> f env
+
+mkDrawPoint :: TypedValue
+            -> EnvCode
+mkDrawPoint v = EnvCode $ \env -> withEnvironment env $
+  (DrawCommand . DrawPoint env <$> atType v (PairType RealType RealType)) <|>
+  (DrawCommand . DrawPoint env . C2R2 <$> atType v ComplexType)
+
+mkDrawCircle :: Bool
+             -> TypedValue
+             -> TypedValue
+             -> EnvCode
+mkDrawCircle isFilled center radius = EnvCode $ \env -> withEnvironment env $
+  DrawCommand <$> (DrawCircle env isFilled
+    <$> atType radius RealType
+    <*> (atType center (PairType RealType RealType) <|>
+         (C2R2 <$> atType center ComplexType)))
+
+mkDrawRect :: Bool
+           -> TypedValue
+           -> TypedValue
+           -> EnvCode
+mkDrawRect isFilled ul lr = EnvCode $ \env -> withEnvironment env $
+  DrawCommand <$> (DrawRect env isFilled
+    <$> (atType ul (PairType RealType RealType) <|>
+         (C2R2 <$> atType ul ComplexType))
+    <*> (atType lr (PairType RealType RealType) <|>
+         (C2R2 <$> atType lr ComplexType)))
+
+mkDrawLine :: TypedValue
+           -> TypedValue
+           -> EnvCode
+mkDrawLine ul lr = EnvCode $ \env -> withEnvironment env $
+  DrawCommand <$> (DrawLine env
+    <$> (atType ul (PairType RealType RealType) <|>
+         (C2R2 <$> atType ul ComplexType))
+    <*> (atType lr (PairType RealType RealType) <|>
+         (C2R2 <$> atType lr ComplexType)))
+
+mkSetStroke :: TypedValue -> EnvCode
+mkSetStroke c = EnvCode $ \env -> withEnvironment env $
+  DrawCommand . SetStroke env <$> atType c ColorType
+
+mkSetFill :: TypedValue -> EnvCode
+mkSetFill c = EnvCode $ \env -> withEnvironment env $
+  DrawCommand . SetFill env <$> atType c ColorType
+
+mkClear :: EnvCode
+mkClear = EnvCode (\env -> withEnvironment env $ pure (DrawCommand $ Clear env))
+
+mkListInsert :: TypedValue -> StartOrEnd -> String -> EnvCode
+mkListInsert item soe listName =
+  EnvCode $ \env -> withEnvironment env $ do
+  SomeSymbol list <- pure (someSymbolVal listName)
+  case lookupEnv' list env of
+    Absent' _ -> Errs $ Left [listName ++ " is not defined in this environment"]
+    Found' listTy pfListPresent -> case listTy of
+      ListType itemTy -> do
+        Insert pfListPresent list listTy env soe <$> atType item itemTy
+      ty -> Errs $ Left [listName ++ " is not a list, its type is " ++ showType ty]
+
+mkListRemoveSome :: String -> TypedValue -> String -> EnvCode
+mkListRemoveSome itemName predicate listName =
+  EnvCode $ \env -> withEnvironment env $ do
+  SomeSymbol item <- pure (someSymbolVal itemName)
+  SomeSymbol list <- pure (someSymbolVal listName)
+  case lookupEnv' list env of
+    Absent' _ -> Errs $ Left [listName ++ " is not defined in this environment"]
+    Found' listTy pfListPresent -> do
+      case lookupEnv' item env of
+        Found' {} -> Errs $ Left [itemName ++ " is already defined in this environment"]
+        Absent' pfItemAbsent -> recallIsAbsent pfItemAbsent $ case listTy of
+          ListType _ -> do
+            Remove pfListPresent list listTy item pfItemAbsent env
+              <$> atType predicate BooleanType
+          ty -> Errs $ Left [listName ++ " is not a list, its type is " ++ showType ty]
+
+mkListRemoveAll :: String -> EnvCode
+mkListRemoveAll listName =
+  EnvCode $ \env -> withEnvironment env $ do
+  SomeSymbol list <- pure (someSymbolVal listName)
+  case lookupEnv' list env of
+    Absent' _ -> Errs $ Left [listName ++ " is not defined in this environment"]
+    Found' listTy pfListPresent -> case listTy of
+      ListType _ -> pure (ClearList pfListPresent list listTy env)
+      ty -> Errs $ Left [listName ++ " is not a list, its type is " ++ showType ty]
+
+mkListFor :: String -> String -> EnvCode -> EnvCode
+mkListFor itemName listName body =
+  EnvCode $ \env -> withEnvironment env $ do
+  SomeSymbol item <- pure (someSymbolVal itemName)
+  SomeSymbol list <- pure (someSymbolVal listName)
+  case lookupEnv' list env of
+    Absent' _ -> Errs $ Left [listName ++ " is not defined in this environment"]
+    Found' listTy pfListPresent -> do
+      case lookupEnv' item env of
+        Found' {} -> Errs $ Left [itemName ++ " is already defined in this environment"]
+        Absent' pfItemAbsent -> recallIsAbsent pfItemAbsent $ do
+          case listTy of
+            ListType itemTy -> do
+              let env' = declare itemTy env
+              ForEach pfListPresent list listTy item pfItemAbsent env env' <$> atEnv env' body
+            ty -> Errs $ Left [listName ++ " is not a list, its type is " ++ showType ty]
+
+mkListWith :: String
+           -> TypedValue
+           -> String
+           -> EnvCode
+           -> Maybe EnvCode
+           -> EnvCode
+mkListWith itemName predicate listName body fallback =
+  EnvCode $ \env -> withEnvironment env $ do
+  SomeSymbol item <- pure (someSymbolVal itemName)
+  SomeSymbol list <- pure (someSymbolVal listName)
+  case lookupEnv' list env of
+    Absent' _ -> Errs $ Left [listName ++ " is not defined in this environment"]
+    Found' listTy pfListPresent -> do
+      case lookupEnv' item env of
+        Found' {}  -> Errs $ Left [itemName ++ " is already defined in this environment"]
+        Absent' pfItemAbsent -> recallIsAbsent pfItemAbsent $ do
+          case listTy of
+            ListType itemTy -> do
+              let env' = declare itemTy env
+              Lookup pfListPresent list listTy item pfItemAbsent env' env
+                <$> atType predicate BooleanType
+                <*> atEnv env' body
+                <*> traverse (atEnv env) fallback
+            ty -> Errs $ Left [listName ++ " is not a list, its type is " ++ showType ty]

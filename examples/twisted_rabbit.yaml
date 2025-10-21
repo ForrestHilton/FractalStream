@@ -17,13 +17,13 @@ viewer:
           k <- k + 1
 
         if k = maxIters then
-          output black to color
+          color <- black
         else
           c1 : Color <- if im(z) > 0 then blue else yellow
           c2 : Color <- if im(z) > 0 then green else red
           s : R <- k + 1 - (log (log (|z|^2 / 2))) / log 2
           s <- cos (s pi / 10)^2
-          output blend (s, c1, c2) to color
+          color <- blend (s, c1, c2)
 
 setup:
   title: Parametric complex dynamics

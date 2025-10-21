@@ -69,6 +69,9 @@ runEnsemble jit UI{..} Ensemble{..} = do
                                               (contextToEnv config) "internal error"
       ProofNameIsAbsent <- assertAbsentInEnv' (Proxy @"[internal argument] #subsamples")
                                               (contextToEnv config) "internal error"
+      ProofNameIsAbsent <- assertAbsentInEnv' (Proxy @"color")
+                                              (contextToEnv config)
+                                              "internal error, `color` already defined"
       forM_ ensembleViewers $ \viewer ->
         withComplexViewer' jit config splices viewer $ \vu cv' -> do
           makeViewer project vu cv'

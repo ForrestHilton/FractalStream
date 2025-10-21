@@ -19,9 +19,9 @@ viewer:
       # Color points that failed to escape black, and
       # for other points use a gradient between red and yellow.
       if k = max_iters then
-        output black to color
+        color <- black
       else
-        output blend ((k/max_iters)^p, red, yellow) to color
+        color <- blend ((k/max_iters)^p, red, yellow)
 
 configuration:
   title: Configuration

@@ -2,15 +2,16 @@
 
 module Language.Code
   ( module Language.Value
-  , module Language.Effect
   , Code
   , CodeF(..)
   , SomeCode(..)
+  , StartOrEnd(..)
   , transformValues
+  , transformValuesM
   , set
   , let_
-  , gatherUsedVarsInCode
-  , gatherUsedVarsInValue
+  , usedVarsInCode
+  , usedVarsInValue
   , Unit
   , UnitET
   ) where
@@ -18,89 +19,148 @@ module Language.Code
 import FractalStream.Prelude
 
 import Language.Value
-import Language.Effect
+import Language.Draw
 import Data.Indexed.Functor
 import qualified Data.Set as Set
+import Control.Monad.Identity (runIdentity)
 
 data SomeCode where
-  SomeCode :: forall effs env. Code effs env -> SomeCode
+  SomeCode :: forall env. Code env -> SomeCode
 
 ---------------------------------------------------------------------------------
 -- Code
 ---------------------------------------------------------------------------------
 
-type Code effs = CodeF effs (FIX (CodeF effs))
+type Code = CodeF (FIX CodeF)
 
-instance Show (Code effs env) where show _ = "<code>"
+instance Show (Code env) where show _ = "<code>"
 
 -- | The Code type is used recursively at different Type parameters,
 -- and also at different Environments (in a Let binding). That means
 -- we need to use both the environment *and* the type as indices
 -- in order to make an indexed functor.
-data CodeF (effs :: [Effect])
-           (code :: Environment -> Exp Type)
+data CodeF (code :: Environment -> Exp Type)
            (env :: Environment) where
 
   -- | Define a new variable scoped to the given Code.
-  Let :: forall name ty env effs code
+  Let :: forall name ty env code
        . (KnownSymbol name, KnownEnvironment env)
       => NameIsPresent name ty ( '(name, ty) ': env)
       -> Proxy (name :: Symbol)
       -> Value '(env, ty)
       -> Eval (code ( '(name, ty) ': env ))
-      -> CodeF effs code env
+      -> CodeF code env
 
   -- | Update the value of a variable
-  Set :: forall name ty env effs code
+  Set :: forall name ty env code
         . (KnownSymbol name, KnownEnvironment env)
        => NameIsPresent name ty env
        -> Proxy name
        -> Value '(env, ty)
-       -> CodeF effs code env
+       -> CodeF code env
 
   -- | A block of statements with VoidT type, followed by a
   -- statement with any type. The type of the block is the
   -- type of the final statement.
-  Block :: forall effs env code
+  Block :: forall env code
          . KnownEnvironment env
         => [Eval (code env)]
-        -> CodeF effs code env
+        -> CodeF code env
 
   -- | Do nothing
-  NoOp :: forall env effs code
+  NoOp :: forall env code
         . KnownEnvironment env
-       => CodeF effs code env
+       => CodeF code env
 
   -- | Do-while loop
-  DoWhile :: forall env effs code
+  DoWhile :: forall env code
            . KnownEnvironment env
           => Value '(env, 'BooleanT)
           -> Eval (code env)
-          -> CodeF effs code env
+          -> CodeF code env
 
   -- | If/else statement
-  IfThenElse :: forall env effs code
+  IfThenElse :: forall env code
        . KnownEnvironment env
       => Value '(env, 'BooleanT)
       -> Eval (code env)
       -> Eval (code env)
-      -> CodeF effs code env
+      -> CodeF code env
 
-  -- | Embedded effect sub-language
-  Effect :: forall env effs eff code
-          . (HasEffect eff effs, KnownEnvironment env)
-         => Proxy eff
-         -> Proxy env
-         -> eff code env
-         -> CodeF effs code env
+  -- | Draw commands
+  DrawCommand :: forall env code
+               . KnownEnvironment env
+              => Draw env
+              -> CodeF code env
+
+  -- | List commands
+  Insert :: forall name ty env code
+          . KnownSymbol name
+         => NameIsPresent name ('ListT ty) env
+         -> Proxy name
+         -> TypeProxy ('ListT ty)
+         -> EnvironmentProxy env
+         -> StartOrEnd
+         -> Value '(env, ty)
+         -> CodeF code env
+
+  Lookup :: forall name ty env code item
+          . (KnownSymbol name, KnownSymbol item)
+         => NameIsPresent name ('ListT ty) env
+         -> Proxy name
+         -> TypeProxy ('ListT ty)
+         -> Proxy item
+         -> NameIsAbsent item env
+         -> EnvironmentProxy ('(item, ty) ': env)
+         -> EnvironmentProxy env
+         -> Value '( '(item, ty) ': env, 'BooleanT)
+         -- ^ predicate to test for
+         -> Eval (code ( '(item, ty) ': env))
+         -- ^ action to run on the first item matching the predicate
+         -> Maybe (Eval (code env))
+         -- ^ optional fallback action to run if there was no match
+         -> CodeF code env
+
+  ClearList :: forall name ty env code
+             . KnownSymbol name
+            => NameIsPresent name ('ListT ty) env
+            -> Proxy name
+            -> TypeProxy ('ListT ty)
+            -> EnvironmentProxy env
+            -> CodeF code env
+
+  Remove :: forall name ty env code item
+          . (KnownSymbol name, KnownSymbol item)
+         => NameIsPresent name ('ListT ty) env
+         -> Proxy name
+         -> TypeProxy ('ListT ty)
+         -> Proxy item
+         -> NameIsAbsent item env
+         -> EnvironmentProxy env
+         -> Value '( '(item, ty) ': env, 'BooleanT)
+         -> CodeF code env
+
+  ForEach :: forall name ty env code item
+           . (KnownSymbol name, KnownSymbol item)
+          => NameIsPresent name ('ListT ty) env
+          -> Proxy name
+          -> TypeProxy ('ListT ty)
+          -> Proxy item
+          -> NameIsAbsent item env
+          -> EnvironmentProxy env
+          -> EnvironmentProxy ('(item, ty) ': env)
+          -> Eval (code ( '( item, ty) ': env))
+          -> CodeF code env
+
+data StartOrEnd = Start | End
 
 ---------------------------------------------------------------------------------
 -- Indexed functor instance for Code
 ---------------------------------------------------------------------------------
 
-instance IFunctor (CodeF eff) where
+instance IFunctor CodeF where
 
-  type IndexProxy (CodeF eff) = EnvironmentProxy
+  type IndexProxy CodeF = EnvironmentProxy
 
   toIndex = \case
     Let {} -> envProxy Proxy
@@ -109,12 +169,17 @@ instance IFunctor (CodeF eff) where
     NoOp -> envProxy Proxy
     DoWhile {} -> envProxy Proxy
     IfThenElse {} -> envProxy Proxy
-    Effect _ pxy _ -> envProxy pxy
+    DrawCommand {} -> envProxy Proxy
+    Insert _ _ _ env _ _ -> env
+    Lookup _ _ _ _ _ _ env _ _ _ -> env
+    ClearList _ _ _ env -> env
+    Remove _ _ _ _ _ env _ -> env
+    ForEach _ _ _ _ _ env _ _ -> env
 
   imap :: forall a b env
         . (forall env'. EnvironmentProxy env' -> Eval (a env') -> Eval (b env'))
-       -> CodeF eff a env
-       -> CodeF eff b env
+       -> CodeF a env
+       -> CodeF b env
   imap f code =
     let env = toIndex code
     in case code of
@@ -125,56 +190,55 @@ instance IFunctor (CodeF eff) where
       NoOp -> NoOp
       DoWhile cond body -> DoWhile cond (f env body)
       IfThenElse cond yes no -> IfThenElse cond (f env yes) (f env no)
-      Effect eff envp e -> Effect eff envp (imap f e)
-
-{-
-    let env :: EnvironmentProxy (Env et)
-        env = case toIndex x of { EnvType _ -> envProxy (Proxy @(Env et)) }
-        index :: forall i. TypeProxy i -> EnvTypeProxy '(Env et, i)
-        index i = withEnvironment env (EnvType i)
-    in case x of
-      Let pf (n :: Proxy name) (vt :: TypeProxy vt) cv t b ->
-        recallIsAbsent (removeName @name pf) $
-          let env' :: EnvironmentProxy ( '(name, vt) ': Env et)
-              env' = withKnownType vt
-                     $ withEnvironment env
-                     $ BindingProxy n vt (envProxy (Proxy @(Env et)))
-              index' :: forall i r
-                      . TypeProxy i
-                     -> TypeProxy r
-                     -> EnvTypeProxy '( '(name, i) ': Env et, r)
-              index' i r = withKnownType i
-                         $ withEnvironment env' (EnvType @( '(name, i) ': Env et) r)
-          in withEnvironment env' (Let pf n vt (f (index vt) cv) t (f (index' vt t) b))
-      Set pf n ty c -> Set pf n ty (f (index ty) c)
-      Block t cs c -> Block t (map (f (index VoidType)) cs) (f (index t) c)
-      NoOp -> NoOp
-      While c b -> While c (f (index VoidType) b)
-      IfThenElse t v yes no -> IfThenElse t v (f (index t) yes) (f (index t) no)
-      Effect e en t c -> Effect e en t (imap f c)
--}
+      DrawCommand d -> DrawCommand d
+      Insert pf n t env' soe v -> Insert pf n t env' soe v
+      Lookup pf n t i pf' env'' env' v body alt -> Lookup pf n t i pf' env'' env' v (f env'' body) (fmap (f env') alt)
+      ClearList pf n t env' -> ClearList pf n t env'
+      Remove pf n t i pf' env' v -> Remove pf n t i pf' env' v
+      ForEach pf n t i pf' env' env'' body -> ForEach pf n t i pf' env' env'' (f env'' body)
 
 ---------------------------------------------------------------------------------
 -- Apply an operation to the @Value@s in a @Code@
 ---------------------------------------------------------------------------------
 
-transformValues :: forall eff env
-                . (forall et. Value et -> Value et)
-               -> Code eff env
-               -> Code eff env
-transformValues f = indexedFold @(FIX (CodeF eff)) $ \case
-  Let pf n v e -> Let pf n (f v) e
-  Set pf n v -> Set pf n (f v)
-  DoWhile cond body -> DoWhile (f cond) body
-  IfThenElse cond yes no -> IfThenElse (f cond) yes no
-  -- FIXME this needs a case that recurses into effects too
-  other    -> other
+transformValuesM :: forall env m
+                  . Monad m
+                 => (forall et. Value et -> m (Value et))
+                 -> Code env
+                 -> m (Code env)
+transformValuesM f = indexedFoldM @(FIX CodeF) (transformValuesM' f)
+
+transformValuesM' :: forall env code m
+                   . Monad m
+                  => (forall et. Value et -> m (Value et))
+                  -> CodeF code env
+                  -> m (CodeF code env)
+transformValuesM' f = \case
+  Let pf n v e -> Let pf n <$> f v <*> pure e
+  Set pf n v -> Set pf n <$> f v
+  DoWhile cond body -> DoWhile <$> f cond <*> pure body
+  IfThenElse cond yes no -> IfThenElse <$> f cond <*> pure yes <*> pure no
+  Block cmds -> pure $ Block cmds
+  NoOp -> pure NoOp
+  DrawCommand d -> DrawCommand <$> transformDrawValuesM f d
+  Insert pf n t env soe v -> Insert pf n t env soe <$> f v
+  Lookup pf n t i pf' env' env v body alt ->
+    Lookup pf n t i pf' env' env <$> f v <*> pure body <*> pure alt
+  ClearList pf n t env -> pure $ ClearList pf n t env
+  Remove pf n t i pf' env v -> Remove pf n t i pf' env <$> f v
+  ForEach pf n t i pf' env env' body -> pure (ForEach pf n t i pf' env env' body)
+
+transformValues :: forall env
+                 . (forall et. Value et -> Value et)
+                -> Code env
+                -> Code env
+transformValues f = runIdentity . transformValuesM (pure . f)
 
 ---------------------------------------------------------------------------------
 -- Indexed traversable instance
 ---------------------------------------------------------------------------------
 
-instance ITraversable (CodeF effs) where
+instance ITraversable CodeF where
   isequence = \case
     Let pf n v c -> Let pf n v <$> c
     Set pf n v -> pure (Set pf n v)
@@ -182,7 +246,13 @@ instance ITraversable (CodeF effs) where
     NoOp -> pure NoOp
     DoWhile c body -> DoWhile c <$> body
     IfThenElse v yes no -> IfThenElse v <$> yes <*> no
-    Effect eff env e -> Effect eff env <$> isequence e
+    DrawCommand d -> pure (DrawCommand d)
+    Insert pf n t env soe v -> pure (Insert pf n t env soe v)
+    Lookup pf n t i pf' env' env v body alt ->
+      Lookup pf n t i pf' env' env v <$> body <*> sequenceA alt
+    ClearList pf n t env -> pure (ClearList pf n t env)
+    Remove pf n t i pf' env v -> pure (Remove pf n t i pf' env v)
+    ForEach pf n t i pf' env env' body -> ForEach pf n t i pf' env env' <$> body
 
 ---------------------------------------------------------------------------------
 -- Utility functions
@@ -197,11 +267,11 @@ instance ITraversable (CodeF effs) where
 --
 --     Let bindingEvidence (Proxy @"foo") value code
 --
-let_ :: forall name env effs ty
+let_ :: forall name env ty
       . (NotPresent name env, KnownSymbol name, KnownEnvironment env)
      => Value '(env, ty)
-     -> Code effs ('(name, ty) ': env)
-     -> Code effs env
+     -> Code ('(name, ty) ': env)
+     -> Code env
 let_ = Let bindingEvidence (Proxy @name)
 
 
@@ -216,33 +286,33 @@ let_ = Let bindingEvidence (Proxy @name)
 --
 --     Set bindingEvidence (Proxy @"foo") value
 --
-set :: forall name env effs ty
+set :: forall name env ty
      . ( Required name env ~ ty, NotPresent name (env `Without` name)
        , KnownSymbol name, KnownEnvironment env)
     => Value '(env, ty)
-    -> Code effs env
+    -> Code env
 set = Set bindingEvidence (Proxy @name)
 
 -- | Find all of the variables that this code depends on
-gatherUsedVarsInCode :: CodeF effs Unit env
+gatherUsedVarsInCode :: CodeF Unit env
                      -> State (Set String) ()
 gatherUsedVarsInCode = \case
   Let _ name v _ -> do
-    indexedFoldM @UnitET gatherUsedVarsInValue v
+    usedVarsInValue v
     modify' (Set.delete (symbolVal name))
-  Set _ _ v -> indexedFoldM @UnitET gatherUsedVarsInValue v
-  Block{} -> pure ()
-  NoOp{} -> pure ()
-  DoWhile c _ -> indexedFoldM @UnitET gatherUsedVarsInValue c
-  IfThenElse tf _ _ -> indexedFoldM @UnitET gatherUsedVarsInValue tf
-  Effect{} -> pure () -- TODO
+  other -> void (transformValuesM' (\v -> usedVarsInValue v >> pure v) other)
 
--- | Find all of the variables that this value depends on
-gatherUsedVarsInValue :: ValueF UnitET et -> State (Set String) ()
-gatherUsedVarsInValue = \case
-  Var name _ _ -> modify' (Set.insert (symbolVal name))
-  LocalLet name _ _ _ _ _ -> modify' (Set.delete (symbolVal name))
-  _ -> pure ()
+usedVarsInValue :: Value et -> State (Set String) ()
+usedVarsInValue = indexedFoldM @UnitET phi
+  where
+    phi :: forall et'. ValueF UnitET et' -> State (Set String) ()
+    phi = \case
+      Var name _ _ -> modify' (Set.insert (symbolVal name))
+      LocalLet name _ _ _ _ _ -> modify' (Set.delete (symbolVal name))
+      _ -> pure ()
+
+usedVarsInCode :: Code env -> State (Set String) ()
+usedVarsInCode = indexedFoldM @Unit gatherUsedVarsInCode
 
 data Unit :: Environment -> Exp Type
 type instance Eval (Unit _) = ()

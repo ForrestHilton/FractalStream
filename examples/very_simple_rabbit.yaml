@@ -18,6 +18,6 @@ viewer:
     # If we didn't escape in 100 loops, draw a black
     # point. Otherwise, draw a white point.
     if k = 100 then
-      output black to color
+      color ⭠ black
     else
-      output white to color
+      color ⭠ white

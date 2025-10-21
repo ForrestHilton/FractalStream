@@ -9,6 +9,7 @@ import FractalStream.Prelude
 import Language.Value
 import Language.Code
 import Language.Value.Evaluator
+import Language.Draw
 
 import Data.Indexed.Functor
 
@@ -37,11 +38,11 @@ eval v = do
 -- | Run some 'Code' by interpreting it into a state monad.
 -- The 's' parameter allows for extra state that may be used
 -- by the effects handlers.
-simulate :: forall effs env s
-          . Handlers effs (HaskellTypeM s)
-         -> Code effs env
+simulate :: forall env s
+          . DrawHandler (HaskellTypeM s)
+         -> Code env
          -> State (Context HaskellTypeOfBinding env, s) ()
-simulate handlers = indexedFold @(HaskellTypeM s) $ \case
+simulate draw = indexedFold @(HaskellTypeM s) $ \case
 
   Let pf name vc body -> recallIsAbsent (absentInTail pf) $ do
     (ctx, s) <- get
@@ -69,6 +70,56 @@ simulate handlers = indexedFold @(HaskellTypeM s) $ \case
     tf <- eval test
     if tf then t else f
 
-  Effect effectType env eff ->
-    case getHandler effectType handlers of
-      Handle _ handle -> handle (envProxy env) eff
+  DrawCommand d -> runDrawHandler draw d
+
+  Insert pf listName listTy env soe ve -> do
+    v <- eval ve
+    lst <- eval (withEnvironment env $ Var listName listTy pf)
+    let lst' = case soe of
+          Start -> (v : lst)
+          End   -> lst ++ [v]
+    update pf listName listTy lst'
+
+  Lookup pfList listName listTy@(ListType itemTy) itemName pfNoItem _ env predicate action fallback ->
+        recallIsAbsent pfNoItem $ do
+        let go = \case
+              [] -> fromMaybe (pure ()) fallback
+              (item : items) -> do
+                (ctx, s) <- get
+                let ctx' = Bind itemName itemTy item ctx
+                    (matches, (Bind _ _ _ ctx'', s')) = runState (eval predicate) (ctx', s)
+                put (ctx'', s')
+                case matches of
+                  True -> lift (evalStateT action (ctx', s))
+                  False -> go items
+        go =<< eval (withEnvironment env $ Var listName listTy pfList)
+
+  ClearList pfList listName listTy _ -> do
+    update pfList listName listTy []
+
+  Remove pfList listName listTy@(ListType itemTy) itemName pfNoItem env predicate ->
+    recallIsAbsent pfNoItem $ do
+    let go = \case
+          [] -> pure []
+          (item : items) -> do
+            (ctx, s) <- get
+            let ctx' = Bind itemName itemTy item ctx
+                (matched, (Bind _ _ _ ctx'', s')) = runState (eval predicate) (ctx', s)
+            put (ctx'', s')
+            case matched of
+              False -> (item :) <$> go items
+              True  -> go items
+    lst' <- go =<< eval (withEnvironment env $ Var listName listTy pfList)
+    update pfList listName listTy lst'
+
+  ForEach pfList listName listTy@(ListType itemTy) itemName pfNoItem env _ body ->
+    recallIsAbsent pfNoItem $ do
+    let go = \case
+          [] -> pure ()
+          (item : items) -> do
+            (ctx, s) <- get
+            let ctx' = Bind itemName itemTy item ctx
+                (Bind _ _ _ ctx'', s') = execState body (ctx', s)
+            put (ctx'', s')
+            go items
+    go =<< eval (withEnvironment env $ Var listName listTy pfList)
