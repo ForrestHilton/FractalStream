@@ -80,6 +80,12 @@ viewer:
             draw point at a
             draw point at b
             draw point at c
+        - event: refresh
+          code: |
+            erase
+            draw point at a
+            draw point at b
+            draw point at c
         - event: drag-finished
           code: drag_target <- 0
 
