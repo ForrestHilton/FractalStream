@@ -5,7 +5,6 @@ Description  : Main entry point into FractalStream
 module Main where
 
 import Actor.Ensemble
-import Actor.Viewer.Complex
 
 import UI.ProjectActions
 import UI.Menu
@@ -16,19 +15,20 @@ import qualified Data.Yaml as YAML
 
 import UI.Welcome
 
-import Backend.LLVM (withViewerCode', withJIT)
+import Backend
 import Graphics.UI.WX (start)
 
 main :: IO ()
-main = withJIT $ \jit -> start $ do
+main = withBackend $ \complexViewerCompiler -> start $ do
 
   let projectNew = putStrLn "TODO"
 
       projectOpen = \yamlFile -> do
         -- TODO add error handling instead of throwing here
         ensemble <- YAML.decodeFileThrow yamlFile
-        let jitter = ComplexViewerCompiler (withViewerCode' jit)
-        runEnsemble jitter (viewProject (makeMenuBar ProjectActions{..})) ensemble
+        runEnsemble complexViewerCompiler
+                    (viewProject (makeMenuBar ProjectActions{..}))
+                    ensemble
 
       projectEdit = editProject
 

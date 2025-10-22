@@ -96,12 +96,12 @@ fillBlock Block{..} = do
       -- Fill target buffer with result colors.
       with blockBuffer $ \buffer -> withForeignPtr buffer $ \ptr -> do
         forM_ (zip uv_points [0..]) $ \((u,v), ix) -> do
-          let index = floor $ u + v * fromIntegral xStride
-          forM_ [indexOf (du,dv) | dv <- [0 .. skip - 1]
-                                 , du <- [0 .. skip - 1] ] $ \offset -> do
-            peekByteOff @Word8 tmp (3*ix + 0) >>= pokeByteOff ptr (3*index + offset + 0)
-            peekByteOff @Word8 tmp (3*ix + 1) >>= pokeByteOff ptr (3*index + offset + 1)
-            peekByteOff @Word8 tmp (3*ix + 2) >>= pokeByteOff ptr (3*index + offset + 2)
+          --let index = floor $ u + v * fromIntegral xStride
+          forM_ [indexOf (u + du, v + dv) | dv <- [0 .. skip - 1]
+                                          , du <- [0 .. skip - 1] ] $ \offset -> do
+            peekByteOff @Word8 tmp (3*ix + 0) >>= pokeByteOff ptr (3*offset + 0)
+            peekByteOff @Word8 tmp (3*ix + 1) >>= pokeByteOff ptr (3*offset + 1)
+            peekByteOff @Word8 tmp (3*ix + 2) >>= pokeByteOff ptr (3*offset + 2)
 
       -- Completed the block, signal for a redraw
       void (tryPutMVar shouldRedraw ())
@@ -130,9 +130,12 @@ progressively render block = do
       caps <- getNumCapabilities
       putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
 
-    let rates = [logSampleRate block] -- FIXME filter (<= logSampleRate block) [-4, -2, 0, 1] --, logSampleRate block]
+    let rates = filter (<= logSampleRate block) [-4, -2, 0, 1]
 
-    let todo = [(rate, x, y) | rate <- rates, (x,y) <- subblocks]
+    let todo = [(rate, x, y)
+               | rate <- rates, (x,y) <- subblocks
+               , rate >= 0 || (snd x `mod` 2^(negate rate) == 0 &&
+                               snd y `mod` 2^(negate rate) == 0) ]
     when False $ putStrLn $ "***** start @ rates=" ++ show rates
     start <- getCurrentTime
 

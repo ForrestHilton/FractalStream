@@ -152,7 +152,7 @@ setup:
         variable: stop
 
 configuration:
-  title: ℂonfiguration
+  title: Configuration
   size: 400x200
   vertical-contents:
     - text-entry:
