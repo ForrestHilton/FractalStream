@@ -195,6 +195,9 @@ valueGrammar splices = mdo
       <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n complexFunctions;
                                _ -> Nothing }))
       <*> atomOrFunAp
+    , mkMod
+      <$> (token (Identifier "mod") *> token OpenParen *> arith)
+      <*> (token Comma *> arith <* token CloseParen)
     ]
 
   negated <- ruleChoice
@@ -487,6 +490,14 @@ mkList xs = TypedValue $ \ty -> case ty of
   ListType ity -> List ity <$> traverse (`atType` ity) xs
   _ -> typeError ty "a list with items" "some list"
 
+mkMod :: TypedValue -> TypedValue -> TypedValue
+mkMod x y = TypedValue $ \ty -> case ty of
+  IntegerType -> ModI <$> atType x IntegerType <*> atType y IntegerType
+  RealType    -> (I2R <$> (ModI <$> atType x IntegerType <*> atType y IntegerType)) <|>
+                 (ModF <$> atType x RealType <*> atType y RealType)
+  ComplexType -> (R2C . I2R <$> (ModI <$> atType x IntegerType <*> atType y IntegerType)) <|>
+                 (R2C <$> (ModF <$> atType x RealType <*> atType y RealType))
+  _ -> typeError ty "a modulo operation" "ℝ or ℤ"
 
 tokenMatch :: (t -> Maybe a) -> Prod r e t a
 tokenMatch f = satisfy (isJust . f) <&> \t -> case f t of
