@@ -300,6 +300,22 @@ gatherUsedVarsInCode = \case
   Let _ name v _ -> do
     usedVarsInValue v
     modify' (Set.delete (symbolVal name))
+  Insert _ name _ _ _ v -> do
+    usedVarsInValue v
+    modify' (Set.insert (symbolVal name))
+  Lookup _ name _ item _ _ _ v _ _ -> do
+    usedVarsInValue v
+    modify' (Set.delete (symbolVal item) .
+             Set.insert (symbolVal name))
+  ClearList _ name _ _ -> do
+    modify' (Set.insert (symbolVal name))
+  Remove _ name _ item _ _ v -> do
+    usedVarsInValue v
+    modify' (Set.delete (symbolVal item) .
+             Set.insert (symbolVal name))
+  ForEach _ name _ item _ _ _ _ -> do
+    modify' (Set.delete (symbolVal item) .
+             Set.insert (symbolVal name))
   other -> void (transformValuesM' (\v -> usedVarsInValue v >> pure v) other)
 
 usedVarsInValue :: Value et -> State (Set String) ()

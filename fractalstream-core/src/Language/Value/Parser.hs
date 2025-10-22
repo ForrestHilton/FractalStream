@@ -4,6 +4,7 @@ module Language.Value.Parser
   , parseTypedValue
   , parseValueFromTokens
   , parseTypedValueFromTokens
+  , parseType
   , tokenize
   , tokenizeWithIndentation
   , valueGrammar
@@ -63,6 +64,12 @@ parseTypedValueFromTokens splices tokens =
     ([tv], _) -> pure tv
     (_, r)    -> Left ("ambiguous parse: " ++ show r)
 
+parseType :: String -> Either String SomeType
+parseType input =
+  case fullParses (parser typeGrammar) (tokenize input) of
+    ([], r)   -> Left ("no parse: " ++ show r)
+    ([ty], _) -> withType ty (pure . SomeType)
+    (_, r)    -> Left ("ambiguous parse: " ++ show r)
 
 newtype TypedValue = TypedValue (forall env ty. KnownEnvironment env => TypeProxy ty -> Errs (Value '(env, ty)))
 
@@ -77,9 +84,9 @@ atType v@(TypedValue f) ty = case ty of
   _           -> f ty
 
 typeError :: TypeProxy ty -> String -> String -> Errs a
-typeError expected thing thingType = Errs $
-  Left ["I expected a value of " ++ showType expected ++ " type here, " ++
-         "but " ++ thing ++ " has " ++ thingType ++ " type."]
+typeError thingType thing expected = Errs $
+  Left ["I expected a value of " ++ expected ++ " type here, " ++
+         "but " ++ thing ++ " has " ++ showType thingType ++ " type."]
 
 nameError :: String -> Errs a
 nameError n = Errs $ Left ["No variable named " ++ n ++ " is in scope here."]
@@ -104,7 +111,14 @@ valueGrammar splices = mdo
     , scalar
     ]
 
-  scalar <- rule pair
+  scalar <- ruleChoice [ list, pair ]
+
+  list <- rule (mkList <$> (token OpenBracket *> list' <* token CloseBracket))
+
+  list' <- ruleChoice
+    [ (:) <$> pOr <*> many (token Comma *> pOr)
+    , pure []
+    ]
 
   pair <- ruleChoice
     [ mkPair <$> (ite <* token Comma) <*> pair
@@ -203,7 +217,6 @@ valueGrammar splices = mdo
   atom <- ruleChoice
     [ simpleAtom
     , token OpenParen   *> toplevel <* token CloseParen
-    , token OpenBracket *> toplevel <* token CloseBracket
     , token OpenBrace   *> toplevel <* token CloseBrace
     ]
 
@@ -469,6 +482,12 @@ mkRGB r g b = TypedValue $ \ty -> case ty of
                    <*> atType b RealType
   _ -> typeError ty "an RGB value" "color"
 
+mkList :: [TypedValue] -> TypedValue
+mkList xs = TypedValue $ \ty -> case ty of
+  ListType ity -> List ity <$> traverse (`atType` ity) xs
+  _ -> typeError ty "a list with items" "some list"
+
+
 tokenMatch :: (t -> Maybe a) -> Prod r e t a
 tokenMatch f = satisfy (isJust . f) <&> \t -> case f t of
     Just x  -> x
@@ -542,7 +561,27 @@ types = Map.fromList
 typeGrammar :: forall r. Grammar r (Prod r String Token FSType)
 typeGrammar = mdo
 
-  toplevel <- rule $ tokenMatch $ \case
+  toplevel <- ruleChoice
+    [ productType
+    , listType
+    ]
+
+  listType <- rule
+    (ListT <$> (token (Identifier "List") *> token (Identifier "of") *> listType'))
+
+  listType' <- ruleChoice [ listType, baseType ]
+
+  productType <- ruleChoice
+    [ Pair <$> (baseType <* token (Identifier "x")) <*> productType
+    , baseType
+    ]
+
+  baseType <- ruleChoice
+    [ scalarType
+    , (token OpenParen *> toplevel <* token CloseParen)
+    ]
+
+  scalarType <- rule $ tokenMatch $ \case
     Identifier t -> Map.lookup t types
     _ -> Nothing
 

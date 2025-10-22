@@ -82,6 +82,14 @@ data ConfigVar = ConfigVar
 instance FromJSON (Layout Dummy) where
   parseJSON = withObject "layout" parseLayout
 
+newtype SomeType' = SomeType' { getSomeType :: SomeType }
+
+instance FromJSON SomeType' where
+  parseJSON = withText "type" $ \txt -> do
+    case parseType (Text.unpack txt) of
+      Left err -> fail err
+      Right t  -> pure (SomeType' t)
+
 parseLayout :: Object -> JSON.Parser (Layout Dummy)
 parseLayout o
   =   (Vertical <$> (o .: "vertical-contents"))
@@ -98,9 +106,9 @@ parseLayout o
    textBoxLayout p = do
      lab <- p .: "label"
      StringOrNumber varValue <- p .: "value"
-     varType <- p .: "type"
+     SomeType' varType <- p .: "type"
      varVariable <- p .: "variable"
-     varEnv <- p .:? "environment" .!= Map.empty
+     varEnv <- Map.map getSomeType <$> (p .:? "environment" .!= Map.empty)
      pure (TextBox lab (Dummy ConfigVar{..}))
 
    checkBoxLayout p = do

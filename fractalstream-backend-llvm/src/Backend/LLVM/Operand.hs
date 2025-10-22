@@ -50,6 +50,7 @@ data Op (t :: FSType) where
   ComplexOp :: Operand -> Operand -> Op 'ComplexT
   ColorOp   :: Operand -> Operand -> Operand -> Op 'ColorT
   PairOp    :: forall t1 t2. Op t1 -> Op t2 -> Op ('Pair t1 t2)
+  ListOp    :: forall t. Op ('ListT t)
 
 deriving instance (Show (Op t))
 
@@ -73,7 +74,8 @@ storeOperand op (PtrOp ptrOp) = case (op, ptrOp) of
     store ptrR 0 r
     store ptrG 0 g
     store ptrB 0 b
-  _ -> error "TODO: Unhandled store type"
+  (ListOp, ListOp) -> pure ()
+  _ -> throwError "TODO: Unhandled store type"
 
 detypeOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
               => TypeProxy t
@@ -95,8 +97,8 @@ detypeOperand _t = \case
     c1 <- insertValue c0 r [0]
     c2 <- insertValue c1 g [1]
     insertValue c2 b [2]
-  PairOp _op1 _op2 -> error "TODO: detypeOperand PairOp"
-
+  PairOp _op1 _op2 -> throwError "TODO: detypeOperand PairOp"
+  ListOp -> throwError "TODO: detypeOperand ListOp"
 
 derefOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => PtrOp t -> m (Op t)
@@ -114,6 +116,7 @@ derefOperand (PtrOp ptrOp) = case ptrOp of
             <*> load ptrB 0
   PairOp t1 t2 ->
     PairOp <$> derefOperand (PtrOp t1) <*> derefOperand (PtrOp t2)
+  ListOp -> throwError "TODO: derefOperand ListOp"
 
 -- | Get the LLVM function argument type corresponding to
 -- a FractalStream type.
@@ -163,7 +166,9 @@ allocaOp = \case
     PtrOp ptr2 <- allocaOp t2
     pure (PtrOp (PairOp ptr1 ptr2))
 
-  _ -> throwError "TODO: unhandled type in allocaOp"
+  ListType _ -> pure (PtrOp ListOp)
+
+  ty -> throwError ("Unhandled type in LLVM backend: " ++ showType ty)
 
 typedOperandPtr :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
                 => TypeProxy t
@@ -185,7 +190,7 @@ typedOperandPtr t op = do
              PtrOp <$> (ColorOp <$> gep op[int32 0, int32 0]
                                 <*> gep op[int32 0, int32 1]
                                 <*> gep op[int32 0, int32 2])
-           _ -> error "TODO: typedOperandPtr"
+           _ -> throwError "TODO: typedOperandPtr"
 
 typedOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => TypeProxy t
@@ -215,4 +220,6 @@ typedOperand t op = do
              x2 <- extractValue p[1]
              PairOp <$> typedOperand t1 x1
                     <*> typedOperand t2 x2
-           _ -> error "TODO: missing case in typedOperand"
+
+           ListType _ -> pure ListOp
+           _ -> throwError ("TODO: missing case in typedOperand for type " ++ showType t)

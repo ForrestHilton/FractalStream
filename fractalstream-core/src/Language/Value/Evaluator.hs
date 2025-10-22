@@ -156,6 +156,8 @@ evaluator v0 ctx = case v0 of
     ProjV1 _ p  -> let (x, _) = p ctx in x
     ProjV2 _ p  -> let (_, y) = p ctx in y
 
+    List _ xs -> map ($ ctx) xs
+
     AddF x y -> x ctx + y ctx
     SubF x y -> x ctx - y ctx
     MulF x y -> x ctx * y ctx

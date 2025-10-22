@@ -71,7 +71,10 @@ buildValue getExtern = indexedFold go'
       Const (Scalar (PairType t1 t2) (x,y)) ->
         PairOp <$> go @env' (Const (Scalar t1 x)) <*> go @env' (Const (Scalar t2 y))
 
-      Const _ -> error "unhandled scalar type"
+      Const (Scalar t _) ->
+        throwError ("The LLVM backend can not compile constants of type " ++ showType t)
+
+      List {} -> throwError "The LLVM backend can not compile list values"
 
       And x y -> ((,) <$> x <*> y) >>= \case
         (BooleanOp lhs, BooleanOp rhs) -> BooleanOp <$> I.and lhs rhs
@@ -147,7 +150,9 @@ buildValue getExtern = indexedFold go'
         (BooleanOp cond, ColorOp r g b, ColorOp r' g' b') ->
           ColorOp <$> select cond r r' <*> select cond g g' <*> select cond b b'
 
-      ITE {} -> error "unhandled ITE type"
+      ITE t _ _ _ ->
+        throwError ("In an if/then/else expression, the LLVM backend cannot handle the type " ++
+                   showType t)
 
       Eql BooleanType x y -> ((,) <$> x <*> y) >>= \case
         (BooleanOp lhs, BooleanOp rhs) ->
@@ -181,7 +186,9 @@ buildValue getExtern = indexedFold go'
             c12 <- I.and c1 c2
             BooleanOp <$> I.and c12 c3
 
-      Eql {} -> error "unhandled Eql type"
+      Eql t _ _ ->
+        throwError ("In an equality comparison, the LLVM backend cannot handle the type " ++
+                   showType t)
 
       NEq BooleanType x y -> ((,) <$> x <*> y) >>= \case
            (BooleanOp lhs, BooleanOp rhs) ->
@@ -215,7 +222,9 @@ buildValue getExtern = indexedFold go'
              c12 <- I.or c1 c2
              BooleanOp <$> I.or c12 c3
 
-      NEq {} -> error "unhandled NEq type"
+      NEq t _ _ ->
+        throwError ("In an inequality comparison, the LLVM backend cannot handle the type " ++
+                   showType t)
 
       LTI x y -> ((,) <$> x <*> y) >>= \case
          (IntegerOp lhs, IntegerOp rhs) -> BooleanOp <$> icmp P.SLT lhs rhs

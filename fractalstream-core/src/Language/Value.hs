@@ -91,6 +91,13 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
          -> Eval (value '(env, 'Pair t1 t2))
          -> ValueF value '(env, t2)
 
+  -- Lists
+  List :: forall t env value
+        . KnownEnvironment env
+       => TypeProxy t
+       -> [Eval (value '(env, t))]
+       -> ValueF value '(env, 'ListT t)
+
   -- Floating-point arithmetic
   AddF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
   SubF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
@@ -307,6 +314,8 @@ instance IFunctor ValueF where
     ProjV1 t _ -> case t of { PairType t1 _ -> EnvType t1 }
     ProjV2 t _ -> case t of { PairType _ t2 -> EnvType t2 }
 
+    List t _ -> withKnownType t $ EnvType (ListType t)
+
     AddF {} -> EnvType RealType
     SubF {} -> EnvType RealType
     MulF {} -> EnvType RealType
@@ -405,6 +414,8 @@ instance IFunctor ValueF where
       ProjV1 t p -> ProjV1 t (f (withEnv t) p)
       ProjV2 t p -> ProjV2 t (f (withEnv t) p)
 
+      List t vs -> List t (map (f (withEnv t)) vs)
+
       AddF x y -> AddF (f (withEnv RealType) x) (f (withEnv RealType) y)
 
       SubF x y -> SubF (f (withEnv RealType) x) (f (withEnv RealType) y)
@@ -500,6 +511,8 @@ instance ITraversable ValueF  where
     PairV t mx my -> PairV t <$> mx <*> my
     ProjV1 t mp   -> ProjV1 t <$> mp
     ProjV2 t mp   -> ProjV2 t <$> mp
+
+    List t mvs -> List t <$> sequenceA mvs
 
     AddF mx my -> AddF <$> mx <*> my
     SubF mx my -> SubF <$> mx <*> my
@@ -608,13 +621,14 @@ pprint = indexedFold @PrecString @ValueF go
         in concat [ "(", go @'(Env et', t1) (Const (Scalar t1 x)), ", "
                   , go @'(Env et', t2) (Const (Scalar t2 y)), ")"]
       ListType (it :: TypeProxy it) ->
-        "[" <> intercalate ", " (map (go @'(Env et', it) . Const . Scalar it) c) <> "]"
+        "[" <> intercalate "; " (map (go @'(Env et', it) . Const . Scalar it) c) <> "]"
     Var name _ _ -> symbolVal name
     LocalLet name _ _ v _ e -> concat
       ["let ", symbolVal name, " = ", v, " in ", e]
     PairV _ x y  -> concat ["(", x, ", ", y, ")"]
     ProjV1 _ p   -> concat ["(1st ", p, ")"]
     ProjV2 _ p   -> concat ["(2nd ", p, ")"]
+    List _ xs -> "[" ++ intercalate "; " xs ++ "]"
     AddI x y -> binop "+" x y
     SubI x y -> binop "-" x y
     MulI x y -> binop "*" x y

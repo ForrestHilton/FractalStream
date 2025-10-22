@@ -565,11 +565,20 @@ makeWxComplexViewer
 
     -- Change tracking for variables used in each tool
     forM_ theTools $ \Tool{..} -> do
-     case toolConfig of
-      Nothing -> pure ()
-      Just tconfig -> withDynamicBindings tconfig $
-        fromContextM_ (\name _ v ->
-                         when (symbolVal name `Set.member` toolVars) $ do
+      fromContextM_ (\name _ v ->
+                        when (symbolVal name `Set.member` toolVars) $ do
+                        (v `listenWith` (\_ _ -> do
+                                            -- Don't run the refresh handler here,
+                                            -- we could deadlock since it will also
+                                            -- want to access this variable. Just
+                                            -- queue up a refresh for later.
+                                            void $ tryPutMVar needToSendRefreshEvent ()
+                                        ))) cvConfig'
+      case toolConfig of
+        Nothing -> pure ()
+        Just tconfig -> withDynamicBindings tconfig $ do
+          fromContextM_ (\name _ v ->
+                          when (symbolVal name `Set.member` toolVars) $ do
                            (v `listenWith` (\_ _ -> do
                                                -- Don't run the refresh handler here,
                                                -- we could deadlock since it will also

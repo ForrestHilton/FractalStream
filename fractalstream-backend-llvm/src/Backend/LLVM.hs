@@ -46,7 +46,7 @@ import Foreign hiding (void)
 import GHC.TypeLits
 
 import Text.Disassembler.X86Disassembler
-import Control.Monad (forM_)
+import Control.Monad (forM_, when)
 
 data JITFun (env :: Environment) (ret :: FSType) where
   JITFun :: EnvironmentProxy env -> TypeProxy ret -> FunPtr () -> JITFun env ret
@@ -124,6 +124,7 @@ toFFIArg _ t v = case t of
     c <- mallocArray 3
     pokeArray c [r,g,b]
     pure (argPtr c, free c)
+  ListType _ -> pure (argInt32 0, pure ())
   _ -> error ("todo: toFFIArg " ++ showType t)
 
 fromFFIRetArg :: TypeProxy ty
@@ -235,11 +236,12 @@ withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy output c action
         Left err -> error ("error JITing kernel: " ++ show err)
         Right (JITSymbol kernelFn _) -> do
           putStrLn "------------------------------------------------------------"
-          let dcfg = defaultConfig { confIn64BitMode = True }
-          instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
-          case instrs of
-            Left err -> putStrLn ("disassembly error: " ++ show err)
-            Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
+          when False $ do
+            let dcfg = defaultConfig { confIn64BitMode = True }
+            instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
+            case instrs of
+              Left err -> putStrLn ("disassembly error: " ++ show err)
+              Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
 
           let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
           action $ \blockwidth blockheight subsamples argCtx buf -> do

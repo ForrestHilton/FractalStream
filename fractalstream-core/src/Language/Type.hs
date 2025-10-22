@@ -26,8 +26,6 @@ import FractalStream.Prelude
 
 import Data.Color (Color, colorToRGB)
 
-import Data.Aeson (FromJSON(..), withText)
-
 data FSType
   = VoidT
   | BooleanT
@@ -135,24 +133,6 @@ instance Show SomeType where
 instance Eq SomeType where
   SomeType t1 == SomeType t2 = maybe False (const True) (sameHaskellType t1 t2)
 
-instance FromJSON SomeType where
-  parseJSON = withText "type" $ \case
-    "C"       -> pure $ SomeType ComplexType
-    "ℂ"       -> pure $ SomeType ComplexType
-    "R"       -> pure $ SomeType RealType
-    "ℝ"       -> pure $ SomeType RealType
-    "Z"       -> pure $ SomeType IntegerType
-    "ℤ"       -> pure $ SomeType IntegerType
-    "N"       -> pure $ SomeType IntegerType
-    "ℕ"       -> pure $ SomeType IntegerType
-    "Boolean" -> pure $ SomeType BooleanType
-    "𝔹"       -> pure $ SomeType BooleanType
-    "2"       -> pure $ SomeType BooleanType
-    "Q"       -> pure $ SomeType RationalType
-    "ℚ"       -> pure $ SomeType RationalType
-    "Color"   -> pure $ SomeType ColorType
-    _         -> fail "unknown type"
-
 class KnownType (t :: FSType)   where typeProxy :: TypeProxy t
 instance KnownType 'BooleanT  where typeProxy = BooleanType
 instance KnownType 'IntegerT  where typeProxy = IntegerType
@@ -216,15 +196,15 @@ pattern Color_ c = Scalar ColorType c
 showType :: TypeProxy t -> String
 showType = \case
   BooleanType  -> "Boolean"
-  IntegerType  -> "Integer"
-  RealType     -> "Real"
-  ComplexType  -> "Complex"
+  IntegerType  -> "ℤ"
+  RealType     -> "ℝ"
+  ComplexType  -> "ℂ"
   RationalType -> "Rational"
   ColorType    -> "Color"
   VoidType     -> "Unit"
   ImageType    -> "Image"
   PairType x y -> "(" <> showType x <> " x " <> showType y <> ")"
-  ListType x   -> "List " <> showType x
+  ListType x   -> "List of " <> showType x
 
 showValue :: TypeProxy t -> HaskellType t -> String
 showValue ty v = case ty of
