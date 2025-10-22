@@ -211,9 +211,7 @@ makeWxComplexViewer
                   Just im -> drawCenteredImage im dc viewRect (w, h)
 
                 mdl <- get model value
-                get currentToolIndex value >>= \case
-                  Nothing -> paintToolLayerWithDragBox (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands lastClick draggedTo dc r viewRect
-                  Just{} -> paintToolLayer (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands dc
+                paintToolLayerWithDragBox (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands lastClick draggedTo dc r viewRect
 
               Just (startTime, oldModel, oldImage) -> do
                 -- Animated paint. Zoom and blend smoothly between
@@ -293,6 +291,9 @@ makeWxComplexViewer
 
     lastKnownMouse <- newIORef Nothing
 
+    let getToolEventHandler ix = toolEventHandler (theTools !! ix)
+        runToolEventHandler ix = fromMaybe (pure ()) . getToolEventHandler ix
+
     -- Set click and drag event handlers
     set p [ on mouse   := \case
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
@@ -301,43 +302,54 @@ makeWxComplexViewer
 
               MouseLeftUp pt modifiers | isNoShiftAltControlDown modifiers -> do
                 dragBox <- getDragBox lastClick draggedTo
+                let recenterAction = do
+                      -- Completed a click, recenter to the clicked point.
+                      oldModel <- get model value
+                      newCenter <- viewToModel pt
+                      changeViewTo oldModel { modelCenter = toCoords newCenter }
+                ptz <- viewToModel pt
+                toolClickAction <- get currentToolIndex value <&> \case
+                  Nothing -> recenterAction
+                  Just ix -> case getToolEventHandler ix (Click ptz) of
+                    Nothing -> recenterAction
+                    Just handle -> do
+                      handle
+                      cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
+
                 case dragBox of
-                    Nothing  -> get currentToolIndex value >>= \case
-                      Nothing -> do
-                        -- Completed a click, recenter to the clicked point.
-                        oldModel <- get model value
-                        newCenter <- viewToModel pt
-                        changeViewTo oldModel { modelCenter = toCoords newCenter }
+                    Nothing  -> toolClickAction
 
-                      Just ix -> do
-                        z <- viewToModel pt
-                        toolEventHandler (theTools !! ix) (Click z)
-                        cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
-
-                    Just box -> get currentToolIndex value >>= \case
-                      Just ix -> do
-                        get lastClick value >>= \case
-                          Nothing -> pure ()
-                          Just (Viewport vstart) -> do
-                            zstart <- viewToModel (uncurry Point vstart)
-                            z <- viewToModel pt
-                            toolEventHandler (theTools !! ix) (DragDone z zstart)
-                            cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
-                      Nothing -> do
-                        -- Completed a drag. Zoom in to the dragged box, unless
-                        -- the box is pathologically small; in that case, treat
-                        -- the action as if it were a simple click.
-                        oldModel <- get model value
-                        Size { sizeW = w, sizeH = h } <- get f clientSize
-                        newCenter <- viewToModel (viewportToPoint $ rectCenter box)
-                        let (px, py) = modelPixelDim oldModel
-                            (boxW, boxH) = dimensions box
-                            oldArea = fromIntegral (w * h)
-                            newArea = boxW * boxH
-                            literalScale = sqrt (newArea / oldArea)
-                            scale = if literalScale < 0.001 then 1 else literalScale
-                        changeViewTo Model { modelCenter = toCoords newCenter
-                                           , modelPixelDim = (px * scale, py * scale) }
+                    Just box -> do
+                      let finishDrag = do
+                            -- Completed a drag. Zoom in to the dragged box, unless
+                            -- the box is pathologically small; in that case, treat
+                            -- the action as if it were a simple click.
+                            oldModel <- get model value
+                            Size { sizeW = w, sizeH = h } <- get f clientSize
+                            newCenter <- viewToModel (viewportToPoint $ rectCenter box)
+                            let (px, py) = modelPixelDim oldModel
+                                (boxW, boxH) = dimensions box
+                                oldArea = fromIntegral (w * h)
+                                newArea = boxW * boxH
+                                scale = sqrt (newArea / oldArea)
+                            if scale < 0.001
+                              then toolClickAction
+                              else changeViewTo Model { modelCenter = toCoords newCenter
+                                                      , modelPixelDim = (px * scale, py * scale) }
+                      get currentToolIndex value >>= \case
+                        Just ix -> do
+                          get lastClick value >>= \case
+                            Nothing -> pure ()
+                            Just (Viewport vstart) -> do
+                              zstart <- viewToModel (uncurry Point vstart)
+                              z <- viewToModel pt
+                              case getToolEventHandler ix (DragDone z zstart) of
+                                Just handle -> do
+                                  finishDrag
+                                  handle
+                                  cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
+                                Nothing -> finishDrag
+                        Nothing -> finishDrag
 
                 set draggedTo [value := Nothing]
                 set lastClick [value := Nothing]
@@ -347,16 +359,18 @@ makeWxComplexViewer
                 mpt <- viewToModel pt
                 set status [text := show mpt]
                 set draggedTo [value := Just $ Viewport (pointX pt, pointY pt)]
+                let dragAction = do
+                      set status [text := show mpt]
+
+                      dragBox <- getDragBox lastClick draggedTo
+                      case dragBox of
+                        Nothing -> return ()
+                        Just _  -> triggerRepaint
+
+                      propagateEvent
+
                 get currentToolIndex value >>= \case
-                  Nothing -> do
-                    set status [text := show mpt]
-
-                    dragBox <- getDragBox lastClick draggedTo
-                    case dragBox of
-                      Nothing -> return ()
-                      Just _  -> triggerRepaint
-
-                    propagateEvent
+                  Nothing -> dragAction
 
                   Just ix -> do
                      get lastClick value >>= \case
@@ -364,8 +378,11 @@ makeWxComplexViewer
                        Just (Viewport vstart) -> do
                          zstart <- viewToModel (uncurry Point vstart)
                          z <- viewToModel pt
-                         toolEventHandler (theTools !! ix) (Drag z zstart)
-                         cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
+                         case getToolEventHandler ix (Drag z zstart) of
+                           Just action -> do
+                             action
+                             cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
+                           Nothing -> dragAction
                      propagateEvent
 
 
@@ -380,7 +397,7 @@ makeWxComplexViewer
                    Nothing -> pure ()
                    Just ix -> do
                      z <- viewToModel pt
-                     toolEventHandler (theTools !! ix) (DoubleClick z)
+                     runToolEventHandler ix (DoubleClick z)
                      cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
                      propagateEvent
 
@@ -394,9 +411,7 @@ makeWxComplexViewer
             WX.ScrollLineDown WX.Vertical _ -> Just True
             _ -> Nothing
       case mb of
-        Just b -> get currentToolIndex value >>= \case
-          Just {} -> propagateEvent
-          Nothing -> do
+        Just b -> do
 
             oldModel <- get model value
             let (px, py) = modelPixelDim oldModel
@@ -484,7 +499,7 @@ makeWxComplexViewer
                      when needToSendRefresh $ get currentToolIndex value >>= \case
                        Nothing -> pure ()
                        Just ix -> do
-                         toolEventHandler (theTools !! ix) Refresh
+                         runToolEventHandler ix Refresh
                          cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
                      ]
 
@@ -597,15 +612,15 @@ makeWxComplexViewer
               get currentToolIndex value >>= \case
                 Nothing -> pure ()
                 Just i -> do
-                  toolEventHandler (theTools !! i) Deactivated
+                  runToolEventHandler i Deactivated
                   (showToolConfig !! i) False
                   cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
               set toolStatus [text := tiName]
               set currentToolIndex [value := Just ix]
-              toolEventHandler (theTools !! ix) Activated
+              runToolEventHandler ix Activated
               (showToolConfig !! ix) True
               when (toolRefreshOnActivate (theTools !! ix)) $
-                toolEventHandler (theTools !! ix) Refresh
+                runToolEventHandler ix Refresh
               cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
           ]
 

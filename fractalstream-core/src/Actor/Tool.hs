@@ -29,7 +29,7 @@ data Tool = Tool
   , toolDrawLayer :: Int
   , toolRefreshOnActivate :: Bool
   , toolConfig :: Maybe (Layout ConstantExpression)
-  , toolEventHandler :: Event -> IO ()
+  , toolEventHandler :: Event -> Maybe (IO ())
   , toolVars :: Set String
   }
 

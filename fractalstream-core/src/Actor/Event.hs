@@ -361,13 +361,13 @@ handleEvent :: forall env
             -> DrawHandler ScalarIORefM
             -> EventHandlers env
             -> Event
-            -> IO ()
+            -> Maybe (IO ())
 handleEvent ctx draw EventHandlers{..} =
   let run :: forall args
            . Maybe (SomeEventHandler env args)
           -> ArgList args
-          -> IO ()
-      run = maybe (\_ -> pure ()) (runEventHandler True ctx draw)
+          -> Maybe (IO ())
+      run mh args = runEventHandler True ctx draw <$> mh <*> pure args
   in \case
     Click (x, y) ->
       run ehOnClick (Arg y $ Arg x $ EndOfArgs)
@@ -380,7 +380,7 @@ handleEvent ctx draw EventHandlers{..} =
     Timer t ->
       run (snd <$> Map.lookup t ehOnTimer) EndOfArgs
     Refresh ->
-      maybe (\_ -> pure ()) (runEventHandler False ctx draw) ehOnRefresh EndOfArgs
+      runEventHandler False ctx draw <$> ehOnRefresh <*> pure EndOfArgs
     Activated -> run ehOnActivated EndOfArgs
     Deactivated -> run ehOnDeactivated EndOfArgs
 

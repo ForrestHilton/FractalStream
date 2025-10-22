@@ -229,7 +229,7 @@ withComplexViewer' jit cvConfig' splices ComplexViewer{..} action = withEnvironm
                 let toolInfo = ptoolInfo
                     toolDrawLayer = ptoolDrawLayer
                     toolRefreshOnActivate = ptoolRefreshOnActivate
-                    toolEventHandler = const (pure ()) -- to be replaced below
+                    toolEventHandler = const Nothing -- to be replaced below
                     tool = Tool{..}
                 pure (tool { toolEventHandler = handleEvent cvToolContext (drawTo ptoolDrawLayer) h })
 
