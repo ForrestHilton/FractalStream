@@ -165,7 +165,7 @@ parseToHaskellValue :: forall env ty
 parseToHaskellValue ctx ty input =
   withKnownType ty $
   withEnvironment (contextToEnv ctx) $
-  case parseValue @env @ty Map.empty input of
+  case parseValueOrList @env @ty Map.empty input of
     Left err -> Left err
     Right v  -> pure (evaluate v ctx)
 
@@ -211,7 +211,7 @@ instance Dynamic Expression where
     ColorExpression _ c -> setDynamic c new
     Expression _ (env :: EnvironmentProxy env) (ty :: TypeProxy ty) v -> do
       withEnvironment env $ withKnownType ty $
-        case parseValue @env @ty Map.empty new of
+        case parseValueOrList @env @ty Map.empty new of
           Left err   -> pure (Just (show err))
           Right newV -> do
             setDynamic v (new, newV)
@@ -243,7 +243,7 @@ instance Dynamic ConstantExpression where
     ConstantColorExpression _ c -> setDynamic c new
     ConstantExpression _ (ty :: TypeProxy ty) v ->
       withKnownType ty $
-      case parseValue @'[] @ty Map.empty new of
+      case parseValueOrList @'[] @ty Map.empty new of
         Left err   -> pure (Just err)
         Right newV -> do
           setDynamic v (new, evaluate newV EmptyContext)
@@ -273,20 +273,20 @@ allocateUIExpressions = go
         SomeType (ty :: TypeProxy ty) -> withKnownType ty $
           withEnvFromMap varEnv $ \(env :: EnvironmentProxy env) ->
             withEnvironment env $
-            case parseValue @env @ty Map.empty varValue of
+            case parseValueOrList @env @ty Map.empty varValue of
               Left err -> fail err
               Right v  ->
                 TextBox lab . Expression varVariable env ty
                 <$> newUIValue (varValue, v)
 
       CheckBox lab (Dummy ConfigVar{..}) ->
-        case parseValue @'[] @'BooleanT Map.empty varValue of
+        case parseValueOrList @'[] @'BooleanT Map.empty varValue of
           Left err -> fail err
           Right v  -> CheckBox lab . BoolExpression varVariable
                       <$> newUIValue (evaluate v EmptyContext)
 
       ColorPicker lab (Dummy ConfigVar{..}) ->
-        case parseValue @'[] @'ColorT Map.empty varValue of
+        case parseValueOrList @'[] @'ColorT Map.empty varValue of
           Left err -> fail err
           Right v  -> ColorPicker lab . ColorExpression varVariable
                       <$> newUIValue (evaluate v EmptyContext)
@@ -307,19 +307,19 @@ allocateUIConstants = go
 
       TextBox lab (Dummy ConfigVar{..}) -> case varType of
         SomeType (ty :: TypeProxy ty) -> withKnownType ty $
-          case parseValue @'[] @ty Map.empty varValue of
+          case parseValueOrList @'[] @ty Map.empty varValue of
             Left err -> fail err
             Right v  -> TextBox lab . ConstantExpression varVariable ty
                         <$> newUIValue (varValue, evaluate v EmptyContext)
 
       CheckBox lab (Dummy ConfigVar{..}) ->
-        case parseValue @'[] @'BooleanT Map.empty varValue of
+        case parseValueOrList @'[] @'BooleanT Map.empty varValue of
           Left err -> fail err
           Right v  -> CheckBox lab . ConstantBoolExpression varVariable
                       <$> newUIValue (evaluate v EmptyContext)
 
       ColorPicker lab (Dummy ConfigVar{..}) ->
-        case parseValue @'[] @'ColorT Map.empty varValue of
+        case parseValueOrList @'[] @'ColorT Map.empty varValue of
           Left err -> fail err
           Right v  -> ColorPicker lab . ConstantColorExpression varVariable
                       <$> newUIValue (evaluate v EmptyContext)

@@ -2,6 +2,7 @@
 module Language.Value.Parser
   ( parseValue
   , parseTypedValue
+  , parseValueOrList
   , parseValueFromTokens
   , parseTypedValueFromTokens
   , parseType
@@ -70,6 +71,16 @@ parseType input =
     ([], r)   -> Left ("no parse: " ++ show r)
     ([ty], _) -> withType ty (pure . SomeType)
     (_, r)    -> Left ("ambiguous parse: " ++ show r)
+
+parseValueOrList :: forall env ty. (KnownEnvironment env, KnownType ty)
+                 => Splices
+                 -> String
+                 -> Either String (Value '(env, ty))
+parseValueOrList splices input = case typeProxy @ty of
+  ListType ity -> case filter (not . (`elem` " \t\n\r")) input of
+    "" -> pure (List ity [])
+    _  -> parseValue splices ("[" ++ input ++ "]")
+  _ -> parseValue splices input
 
 newtype TypedValue = TypedValue (forall env ty. KnownEnvironment env => TypeProxy ty -> Errs (Value '(env, ty)))
 

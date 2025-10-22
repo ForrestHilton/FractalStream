@@ -58,7 +58,7 @@ viewers:
                 horizontal-contents:
                   - text-entry:
                       label: "Numerators: "
-                      value: "[0, 1, 2]"
+                      value: "0, 1, 2"
                       type: List of ℤ
                       variable: ps
                   - text-entry:
@@ -180,7 +180,7 @@ viewers:
                 horizontal-contents:
                   - text-entry:
                       label: "Numerators:"
-                      value: "[1,2,4]"
+                      value: "1, 2, 4"
                       type: List of ℤ
                       variable: ps
                   - text-entry:
