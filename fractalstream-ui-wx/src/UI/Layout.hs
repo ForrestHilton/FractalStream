@@ -104,10 +104,7 @@ generateWxLayout frame0 wLayout = do
                                       , tooltip := "" ]
                     Just err -> do
                       set te [ bgcolor := rgb 160 100 (100 :: Int)
-                             , tooltip := unlines
-                                 [ "Could not parse an expression"
-                                 , ""
-                                 , err ]
+                             , tooltip := err
                              ]
               , on focus := (\case
                                 True -> pure ()
@@ -119,10 +116,7 @@ generateWxLayout frame0 wLayout = do
                                                       , tooltip := "" ]
                                     Just err -> do
                                       set te [ bgcolor := rgb 160 100 (100 :: Int)
-                                             , tooltip := unlines
-                                               [ "Could not parse an expression"
-                                               , ""
-                                               , err ]
+                                             , tooltip := err
                                              ])
               ]
        listenWith v (\_ newText -> set te [ text := newText ])

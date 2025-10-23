@@ -8,6 +8,7 @@ import FractalStream.Prelude
 
 import Language.Type
 import Language.Environment
+import Language.Parser (ppFullError)
 import Language.Code.Parser
 import Language.Code.Simulator
 import Language.Draw (DrawHandler(..))
@@ -29,8 +30,9 @@ runWithXY x y lst input = do
   testVar <- case lookupEnv (Proxy @"test") (ListType RealType) (contextToEnv ctx) of
     Found pf -> pure $ Var (Proxy @"test") (ListType RealType) pf
     _ -> Left "impossible"
-  fmap ((`evalState` (ctx, ())) . (\c -> simulate noDraw c >> eval testVar))
-   $ parseCode (envProxy Proxy) Map.empty input
+  first (`ppFullError` input)
+    $ fmap ((`evalState` (ctx, ())) . (\c -> simulate noDraw c >> eval testVar))
+    $ parseCode (envProxy Proxy) Map.empty input
 
 noDraw :: DrawHandler (HaskellTypeM ())
 noDraw = DrawHandler (const $ pure ())

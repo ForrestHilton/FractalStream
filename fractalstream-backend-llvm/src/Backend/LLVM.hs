@@ -39,6 +39,7 @@ import Language.Value
 import Language.Value.Evaluator (HaskellTypeOfBinding)
 import Language.Value.Transform
 import Language.Code
+import Language.Parser (ppFullError)
 import Language.Code.Parser
 import Data.Color
 
@@ -159,7 +160,7 @@ withCompiledCode :: forall env
                  -> IO ()
 withCompiledCode env code run = do
   c <- case parseCode env Map.empty code of
-         Left e  -> error e
+         Left e  -> error (ppFullError e code)
          Right c -> pure c
   m <- either error pure (compileRenderer c)
   loadLibraryPermanently Nothing

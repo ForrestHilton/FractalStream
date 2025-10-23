@@ -1,21 +1,16 @@
 {-# language RecursiveDo #-}
 module Language.Value.Parser
   ( parseValue
-  , parseTypedValue
+  , parseParsedValue
   , parseValueOrList
-  , parseValueFromTokens
-  , parseTypedValueFromTokens
   , parseType
-  , tokenize
-  , tokenizeWithIndentation
   , valueGrammar
   , valueGrammarWithNoSplices
   , atType
   , typeGrammar
-  , TypedValue(..)
+  , ParsedValue(..)
+  , parsedValue
   , Splices
-  , Errs(..)
-  , Alternative(..)
   ) where
 
 import Prelude hiding (LT)
@@ -28,84 +23,62 @@ import Language.Value
 import Language.Parser
 import Data.Color
 
-type Splices = Map String TypedValue
+import GHC.Stack
+
+type Splices = Map String ParsedValue
 
 parseValue :: forall env ty. (KnownEnvironment env, KnownType ty)
            => Splices
            -> String
-           -> Either String (Value '(env, ty))
-parseValue splices = parseValueFromTokens splices . tokenize
+           -> Either (Either ParseError TCError) (Value '(env, ty))
+parseValue splices input = do
+  tv <- first Left (parseParsedValue splices input)
+  case atType tv typeProxy of TC x -> first Right x
 
-parseValueFromTokens :: forall env ty. (KnownEnvironment env, KnownType ty)
-                     => Splices
-                     -> [Token]
-                     -> Either String (Value '(env, ty))
-parseValueFromTokens splices tokens = do
-  tv <- parseTypedValueFromTokens splices tokens
-  case tv `atType` typeProxy of
-    Errs (Left errs) -> Left (init . unlines . Set.toList . Set.fromList $ errs)
-    Errs (Right v)   -> pure v
-
-parseTypedValue :: Map String TypedValue
+parseParsedValue :: Map String ParsedValue
                 -> String
-                -> Either String TypedValue
-parseTypedValue splices = parseTypedValueFromTokens splices . tokenize
+                -> Either ParseError ParsedValue
+parseParsedValue splices = parse (valueGrammar splices) . tokenize
 
-parseTypedValueFromTokens :: Map String TypedValue
-                          -> [Token]
-                          -> Either String TypedValue
-parseTypedValueFromTokens splices tokens =
-  case fullParses (parser (valueGrammar splices)) tokens of
-    ([], r)   -> Left ("no parse: " ++ show r)
-    ([tv], _) -> pure tv
-    (_, r)    -> Left ("ambiguous parse: " ++ show r)
-
-parseType :: String -> Either String SomeType
-parseType input =
-  case fullParses (parser typeGrammar) (tokenize input) of
-    ([], r)   -> Left ("no parse: " ++ show r)
-    ([ty], _) -> withType ty (pure . SomeType)
-    (_, r)    -> Left ("ambiguous parse: " ++ show r)
+parseType :: String -> Either ParseError SomeType
+parseType = fmap (`withType` SomeType) . parse typeGrammar . tokenize
 
 parseValueOrList :: forall env ty. (KnownEnvironment env, KnownType ty)
                  => Splices
                  -> String
-                 -> Either String (Value '(env, ty))
+                 -> Either (Either ParseError TCError) (Value '(env, ty))
 parseValueOrList splices input = case typeProxy @ty of
   ListType ity -> case filter (not . (`elem` " \t\n\r")) input of
     "" -> pure (List ity [])
     _  -> parseValue splices ("[" ++ input ++ "]")
   _ -> parseValue splices input
 
-newtype TypedValue = TypedValue
-  (forall env ty. KnownEnvironment env
+data ParsedValue = ParsedValue SourceRange
+  (forall env ty. (KnownEnvironment env, KnownType ty)
     => TypeProxy ty
-    -> Errs (Value '(env, ty)))
+    -> TC (Value '(env, ty)))
+
+parsedValue :: (forall env ty. (KnownEnvironment env, KnownType ty) => TypeProxy ty -> TC (Value '(env, ty)))
+            -> SourceRange
+            -> ParsedValue
+parsedValue f sr = ParsedValue sr f
 
 -- | Try to interpret the value at the given type, inserting casts if needed.
-atType :: KnownEnvironment env
-       => TypedValue
+atType :: HasCallStack => (KnownEnvironment env, KnownType ty)
+       => ParsedValue
        -> TypeProxy ty
-       -> Errs (Value '(env, ty))
-atType v@(TypedValue f) ty = case ty of
-  RealType    -> (I2R <$> atType v IntegerType) <|> f RealType
-  ComplexType -> (R2C <$> atType v RealType)    <|> f ComplexType
+       -> TC (Value '(env, ty))
+atType v@(ParsedValue _ f) ty = case ty of
+  RealType    -> catchError (I2R <$> atType v IntegerType) $ \_ -> f RealType
+  ComplexType -> catchError (R2C <$> atType v RealType) $ \_ -> f ComplexType
   _           -> f ty
 
-typeError :: SourceRange -> TypeProxy ty -> String -> String -> Errs a
-typeError sr thingType thing expected = Errs $
-  Left ["I expected a value of " ++ expected ++ " type here, " ++
-         "but " ++ thing ++ " has " ++ showType thingType ++ " type. loc=" ++ show sr]
-
-nameError :: SourceRange -> String -> Errs a
-nameError sr n = Errs $ Left ["No variable named " ++ n ++ " is in scope here. loc=" ++ show sr]
-
-valueGrammarWithNoSplices :: forall r. Grammar r (ProdSR r String TypedValue)
+valueGrammarWithNoSplices :: forall r. Grammar r (Prod r ParsedValue)
 valueGrammarWithNoSplices = valueGrammar Map.empty
 
 valueGrammar :: forall r
               . Splices
-             -> Grammar r (ProdSR r String TypedValue)
+             -> Grammar r (Prod r ParsedValue)
 valueGrammar splices = mdo
 
   let toplevel = cast
@@ -185,7 +158,8 @@ valueGrammar splices = mdo
   concatenatedAtoms <- ruleChoice
     [ withSourceRange (mkMul <$> concatenatedAtoms <*> noFunPower)
     , noFunPower
-    , withSourceRange (funAp $> \sr -> TypedValue (\_ -> Errs $ Left ["To avoid ambiguity when using implicit mulitplication, functions must go to the left of other values. loc=" ++ show sr]))
+    , withSourceRange (funAp $> \sr -> ParsedValue sr $ \_ ->
+                          advise sr "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
     ]
 
   concatenatedFunAps <- ruleChoice
@@ -230,7 +204,7 @@ valueGrammar splices = mdo
     , atom
     ]
 
-  atomOrFunAp <- rule (funAp <|> atom)
+  atomOrFunAp <- ruleChoice [funAp, atom]
 
   atom <- ruleChoice
     [ simpleAtom
@@ -301,88 +275,92 @@ valueGrammar splices = mdo
 
   pure toplevel
 
-mkCast :: TypedValue -> FSType -> SourceRange -> TypedValue
-mkCast v tgt sr = TypedValue $ \ty -> withType tgt $ \tgtTy ->
+mkCast :: ParsedValue -> FSType -> SourceRange -> ParsedValue
+mkCast v tgt sr = ParsedValue sr $ \ty -> withType tgt $ \tgtTy ->
   case sameHaskellType ty tgtTy of
-    Nothing -> Errs $ Left ["Conversion to type " ++ showType tgtTy ++ " used in a context "
-                           ++ "where the type " ++ showType ty ++ " was expected. loc=" ++ show sr]
+    Nothing -> throwError (BadConversion sr (SomeType tgtTy) (Expected $ SomeType ty))
     Just Refl -> case ty of
-      RealType -> (atType v RealType) <|> (I2R <$> atType v IntegerType)
-      ComplexType -> atType v ComplexType
-                 <|> (R2C <$> atType v RealType)
-                 <|> (R2C . I2R <$> atType v IntegerType)
+      RealType -> tryEach (Advice sr "Could not convert to a real number")
+        [ atType v RealType
+        , I2R <$> atType v IntegerType
+        ]
+      ComplexType -> tryEach (Advice sr "Could not convert to a complex number")
+        [ atType v ComplexType
+        , R2C <$> atType v RealType
+        , R2C . I2R <$> atType v IntegerType
+        ]
       _ -> atType v ty
 
-mkPair :: TypedValue -> TypedValue -> SourceRange -> TypedValue
-mkPair lhs rhs sr = TypedValue $ \ty -> case ty of
+mkPair :: ParsedValue -> ParsedValue -> SourceRange -> ParsedValue
+mkPair lhs rhs sr = ParsedValue sr $ \ty -> case ty of
   PairType t1 t2 -> PairV ty <$> atType lhs t1 <*> atType rhs t2
-  _ -> typeError sr ty "a tuple" "pair"
+  _ -> throwError (Surprise sr "an ordered pair" "of some product type" (Expected $ an ty))
 
-mkITE :: TypedValue -> TypedValue -> TypedValue -> SourceRange -> TypedValue
-mkITE cond yes no _ = TypedValue $ \ty ->
+mkITE :: ParsedValue -> ParsedValue -> ParsedValue -> SourceRange -> ParsedValue
+mkITE cond yes no sr = ParsedValue sr $ \ty ->
   ITE ty <$> atType cond BooleanType <*> atType yes ty <*> atType no ty
 
-mkOr, mkAnd :: TypedValue -> TypedValue -> SourceRange -> TypedValue
-mkOr lhs rhs sr = TypedValue $ \case
+mkOr, mkAnd :: ParsedValue -> ParsedValue -> SourceRange -> ParsedValue
+mkOr lhs rhs sr = ParsedValue sr $ \case
   BooleanType -> Or <$> atType lhs BooleanType <*> atType rhs BooleanType
-  ty -> typeError sr ty "a disjunction" "boolean"
+  ty -> throwError (Surprise sr "the result of a disjunction" "a truth value" (Expected $ an ty))
 
-mkAnd lhs rhs sr = TypedValue $ \case
+mkAnd lhs rhs sr = ParsedValue sr $ \case
   BooleanType -> And <$> atType lhs BooleanType <*> atType rhs BooleanType
-  ty -> typeError sr ty "a conjunction" "boolean"
+  ty -> throwError (Surprise sr "the result of a conjunction" "a truth value" (Expected $ an ty))
 
-mkNot :: TypedValue -> SourceRange -> TypedValue
-mkNot arg sr = TypedValue $ \case
+mkNot :: ParsedValue -> SourceRange -> ParsedValue
+mkNot arg sr = ParsedValue sr $ \case
   BooleanType -> Not <$> atType arg BooleanType
-  ty -> typeError sr ty "logical negation" "boolean"
+  ty -> throwError (Surprise sr "the result of a logical negation" "a truth value" (Expected $ an ty))
 
-mkEql, mkNEq, mkLT, mkLTE, mkGT, mkGTE :: TypedValue -> TypedValue -> SourceRange -> TypedValue
+mkEql, mkNEq, mkLT, mkLTE, mkGT, mkGTE :: ParsedValue -> ParsedValue -> SourceRange -> ParsedValue
 
-mkEql lhs rhs sr = TypedValue $ \case
-  BooleanType -> asum
+mkEql lhs rhs sr = ParsedValue sr $ \case
+  BooleanType -> tryEach (Advice sr "Arguments to = must be of some comparable type.")
     [ Eql RealType    <$> atType lhs RealType    <*> atType rhs RealType
     , Eql ComplexType <$> atType lhs ComplexType <*> atType rhs ComplexType
     , Eql IntegerType <$> atType lhs IntegerType <*> atType rhs IntegerType
     , Eql BooleanType <$> atType lhs BooleanType <*> atType rhs BooleanType
     ]
-  ty -> typeError sr ty "the arguments to =" "some equatable"
+  ty -> throwError (Surprise sr "the result of an equality check" "a truth value" (Expected $ an ty))
 
-mkNEq lhs rhs sr = TypedValue $ \case
-  BooleanType -> asum
+mkNEq lhs rhs sr = ParsedValue sr $ \case
+  BooleanType -> tryEach (Advice sr "Arguments to ≠ must be of some comparable type.")
     [ NEq RealType    <$> atType lhs RealType    <*> atType rhs RealType
     , NEq ComplexType <$> atType lhs ComplexType <*> atType rhs ComplexType
     , NEq IntegerType <$> atType lhs IntegerType <*> atType rhs IntegerType
     , NEq BooleanType <$> atType lhs BooleanType <*> atType rhs BooleanType
     ]
-  ty -> typeError sr ty "the arguments to ≠" "some equatable"
+  ty -> throwError (Surprise sr "the result of an inequality check" "a truth value" (Expected $ an ty))
 
-mkLT lhs rhs sr = TypedValue $ \case
-  BooleanType -> asum
+mkLT lhs rhs sr = ParsedValue sr $ \case
+  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ LTF <$> atType lhs RealType    <*> atType rhs RealType
     , LTI <$> atType lhs IntegerType <*> atType rhs IntegerType
     ]
-  ty -> typeError sr ty "<" "some ordered"
+  ty -> throwError (Surprise sr "the result of a comparison" "a truth value" (Expected $ an ty))
 
-mkGT lhs rhs sr = TypedValue $ \case
-  BooleanType -> asum
+mkGT lhs rhs sr = ParsedValue sr $ \case
+  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ LTF <$> atType rhs RealType    <*> atType lhs RealType
     , LTI <$> atType rhs IntegerType <*> atType lhs IntegerType
     ]
-  ty -> typeError sr ty ">" "some ordered"
+  ty -> throwError (Surprise sr "the result of a comparison" "a truth value" (Expected $ an ty))
 
-mkGTE lhs rhs sr = TypedValue $ \case
-  BooleanType -> asum
+mkGTE lhs rhs sr = ParsedValue sr $ \case
+  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ Not <$> (LTF <$> atType lhs RealType    <*> atType rhs RealType)
     , Not <$> (LTI <$> atType lhs IntegerType <*> atType rhs IntegerType)
     ]
-  ty -> typeError sr ty "≥" "some ordered"
+  ty -> throwError (Surprise sr "the result of a comparison" "a truth value" (Expected $ an ty))
 
-mkLTE lhs rhs sr =  TypedValue $ \case
-  BooleanType -> asum
+mkLTE lhs rhs sr =  ParsedValue sr $ \case
+  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ Not <$> (LTF <$> atType rhs RealType    <*> atType lhs RealType)
     , Not <$> (LTI <$> atType rhs IntegerType <*> atType lhs IntegerType)
     ]
-  ty -> typeError sr ty "≤" "some ordered"
+  ty -> throwError (Surprise sr "the result of a comparison" "a truth value" (Expected $ an ty))
 
 -- | Do an arithmetic operation, but try to keep conversions at the outermost
 -- layer. For example, if we want to parse "1 + 2" at ComplexT, we want the
@@ -390,128 +368,120 @@ mkLTE lhs rhs sr =  TypedValue $ \case
 -- To do this, we'll try to interpret "1 + 2" as a integer expression followed by
 -- a conversion. If that fails, we'll try it as a real expression followed by a
 -- conversion. And finally if that fails, we'll try it as a complex expression.
-mkArith :: String
-        -> (forall env value. KnownEnvironment env => Eval (value '(env, 'IntegerT)) -> Eval (value '(env, 'IntegerT)) -> ValueF value '(env, 'IntegerT))
+mkArith :: (forall env value. KnownEnvironment env => Eval (value '(env, 'IntegerT)) -> Eval (value '(env, 'IntegerT)) -> ValueF value '(env, 'IntegerT))
         -> (forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT))
         -> (forall env value. KnownEnvironment env => Eval (value '(env, 'ComplexT)) -> Eval (value '(env, 'ComplexT)) -> ValueF value '(env, 'ComplexT))
-        -> TypedValue
-        -> TypedValue
+        -> ParsedValue
+        -> ParsedValue
         -> SourceRange
-        -> TypedValue
-mkArith op makeI makeF makeC lhs rhs sr = TypedValue $ \ty -> case ty of
+        -> ParsedValue
+mkArith makeI makeF makeC lhs rhs sr = ParsedValue sr $ \ty -> case ty of
   IntegerType -> makeI <$> atType lhs IntegerType <*> atType rhs IntegerType
-  RealType    -> (I2R <$> (makeI <$> atType lhs IntegerType <*> atType rhs IntegerType))
-             <|> (makeF <$> atType lhs RealType <*> atType rhs RealType)
-  ComplexType -> (R2C . I2R <$> (makeI <$> atType lhs IntegerType <*> atType rhs IntegerType))
-             <|> (R2C <$> (makeF <$> atType lhs RealType <*> atType rhs RealType))
-             <|> (makeC <$> atType lhs ComplexType <*> atType rhs ComplexType)
-  _ -> typeError sr ty op "numeric"
+  RealType    -> makeF <$> atType lhs RealType <*> atType rhs RealType
+  ComplexType -> makeC <$> atType lhs ComplexType <*> atType rhs ComplexType
+  _ -> throwError (Surprise sr "the result of an arithmetic operation" "of some numeric type" (Expected $ an ty))
 
-mkAdd, mkSub, mkMul, mkDiv, mkIDiv, mkPow :: TypedValue -> TypedValue -> SourceRange -> TypedValue
+mkAdd, mkSub, mkMul, mkDiv, mkIDiv, mkPow :: ParsedValue -> ParsedValue -> SourceRange -> ParsedValue
 
-mkAdd = mkArith "+" AddI AddF AddC
-mkSub = mkArith "-" SubI SubF SubC
-mkMul = mkArith "*" MulI MulF MulC
-mkPow = mkArith "^" PowI PowF PowC
+mkAdd = mkArith AddI AddF AddC
+mkSub = mkArith SubI SubF SubC
+mkMul = mkArith MulI MulF MulC
+mkPow = mkArith PowI PowF PowC
 
-mkDiv lhs rhs sr = TypedValue $ \ty -> case ty of
-  IntegerType -> Errs $ Left ["For integer division, use the // operator."]
+mkDiv lhs rhs sr = ParsedValue sr $ \ty -> case ty of
+  IntegerType -> advise sr "For integer division, use the // operator."
   RealType    -> DivF <$> atType lhs RealType <*> atType rhs RealType
-  ComplexType -> (R2C <$> (DivF <$> atType lhs RealType <*> atType rhs RealType))
-             <|> (DivC <$> atType lhs ComplexType <*> atType rhs ComplexType)
-  _ -> typeError sr ty "/" "real or complex"
+  ComplexType -> DivC <$> atType lhs ComplexType <*> atType rhs ComplexType
+  _ -> throwError (Surprise sr "the result of /" "of some numeric type" (Expected $ an ty))
 
-mkIDiv lhs rhs sr = TypedValue $ \ty -> case ty of
+mkIDiv lhs rhs sr = ParsedValue sr $ \ty -> case ty of
   IntegerType -> (DivI <$> atType lhs IntegerType <*> atType rhs IntegerType)
   RealType    -> I2R <$> (DivI <$> atType lhs IntegerType <*> atType rhs IntegerType)
   ComplexType -> R2C . I2R <$> (DivI <$> atType lhs IntegerType <*> atType rhs IntegerType)
-  _ -> typeError sr ty "//" "integer"
+  _ -> throwError (Surprise sr "the result of //" "an integer" (Expected $ an ty))
 
-mkNeg :: TypedValue -> SourceRange -> TypedValue
-mkNeg x sr = TypedValue $ \ty -> case ty of
+mkNeg :: ParsedValue -> SourceRange -> ParsedValue
+mkNeg x sr = ParsedValue sr $ \ty -> case ty of
   IntegerType -> NegI <$> atType x IntegerType
-  RealType    -> (I2R . NegI <$> atType x IntegerType)
-             <|> (NegF <$> atType x RealType)
-  ComplexType -> (R2C . I2R . NegI <$> atType x IntegerType)
-             <|> (R2C . NegF <$> atType x RealType)
-             <|> (NegC <$> atType x ComplexType)
-  _ -> typeError sr ty "negation" "numeric"
+  RealType    -> NegF <$> atType x RealType
+  ComplexType -> NegC <$> atType x ComplexType
+  _ -> throwError (Surprise sr "the result of negation" "of some numeric type" (Expected $ an ty))
 
-mkScalar :: String -> TypeProxy ty -> HaskellType ty -> SourceRange -> TypedValue
-mkScalar name ty' v sr = TypedValue $ \ty -> case sameHaskellType ty ty' of
+mkScalar :: String -> TypeProxy ty -> HaskellType ty -> SourceRange -> ParsedValue
+mkScalar name ty' v sr = ParsedValue sr $ \ty -> case sameHaskellType ty ty' of
   Just Refl -> pure (Const $ Scalar ty v)
-  Nothing   -> typeError sr ty name (showType ty')
+  Nothing   -> throwError (Surprise sr name (an $ SomeType ty') (Expected $ an ty))
 
-mkAbs :: TypedValue -> SourceRange -> TypedValue
-mkAbs x sr = TypedValue $ \ty -> case ty of
+mkAbs :: ParsedValue -> SourceRange -> ParsedValue
+mkAbs x sr = ParsedValue sr $ \ty -> case ty of
   IntegerType -> AbsI <$> atType x IntegerType
-  RealType -> (AbsF <$> atType x RealType)
-          <|> (AbsC <$> atType x ComplexType)
-  _ -> typeError sr ty "|·|" "real or integer"
+  RealType -> tryEach (Advice sr "The argument to |·| is not a real or complex number")
+     [ AbsF <$> atType x RealType
+     , AbsC <$> atType x ComplexType ]
+  _ -> throwError (Surprise sr "the result of |·|" "a real number or integer" (Expected $ an ty))
 
-mkVar :: String -> SourceRange -> TypedValue
-mkVar n sr = TypedValue $ \ty -> case someSymbolVal n of
+mkVar :: String -> SourceRange -> ParsedValue
+mkVar n sr = ParsedValue sr $ \ty -> case someSymbolVal n of
   SomeSymbol name -> case lookupEnv name ty (envProxy Proxy) of
     Found pf -> pure (Var name ty pf)
-    WrongType (SomeType ty') -> typeError sr ty' n (showType ty)
-    Absent _ -> nameError sr n
+    WrongType (SomeType ty') -> throwError (Surprise sr n (an $ SomeType ty') (Expected $ an ty))
+    Absent _ -> throwError (MissingName sr n)
 
 data CommonFun = CommonFun
   (forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT))
   (forall env value. KnownEnvironment env => Eval (value '(env, 'ComplexT)) -> ValueF value '(env, 'ComplexT))
 
-mkCommonFun :: (String, CommonFun) -> TypedValue -> SourceRange -> TypedValue
-mkCommonFun (name, CommonFun makeF makeC) x sr = TypedValue $ \ty -> case ty of
+mkCommonFun :: (String, CommonFun) -> ParsedValue -> SourceRange -> ParsedValue
+mkCommonFun (name, CommonFun makeF makeC) x sr = ParsedValue sr $ \ty -> case ty of
   RealType    -> makeF <$> atType x RealType
-  ComplexType -> (R2C . makeF <$> atType x RealType)
-             <|> (makeC <$> atType x ComplexType)
-  _ -> typeError sr ty name "real or complex"
+  ComplexType -> makeC <$> atType x ComplexType
+  _ -> throwError (Surprise sr ("the result of " ++ name) "a real or complex number" (Expected $ an ty))
 
-mkRealFun :: (String, RealFun) -> TypedValue -> SourceRange -> TypedValue
-mkRealFun (name, RealFun makeF) x sr = TypedValue $ \ty -> case ty of
+mkRealFun :: (String, RealFun) -> ParsedValue -> SourceRange -> ParsedValue
+mkRealFun (name, RealFun makeF) x sr = ParsedValue sr $ \ty -> case ty of
   RealType -> makeF <$> atType x RealType
-  _ -> typeError sr ty name "real"
+  _ -> throwError (Surprise sr ("the result of " ++ name) "a real number" (Expected $ an ty))
 
-mkComplexFun :: (String, ComplexFun) -> TypedValue -> SourceRange -> TypedValue
-mkComplexFun (name, ComplexFun resultTy makeC) x sr = TypedValue $ \ty -> case resultTy of
+mkComplexFun :: (String, ComplexFun) -> ParsedValue -> SourceRange -> ParsedValue
+mkComplexFun (name, ComplexFun resultTy makeC) x sr = ParsedValue sr $ \ty -> case resultTy of
   RealType -> case ty of
     RealType -> makeC <$> atType x ComplexType
     ComplexType -> R2C . makeC <$> atType x ComplexType
-    _ -> typeError sr ty name "real"
+    _ -> throwError (Surprise sr ("the result of " ++ name) "a real number" (Expected $ an ty))
   ComplexType -> case ty of
     ComplexType -> makeC <$> atType x ComplexType
-    _ -> typeError sr ty name "complex"
-  _ -> typeError sr ty name (showType resultTy)
+    _ -> throwError (Surprise sr ("the result of " ++ name) "a complex number" (Expected $ an ty))
+  _ -> throwError (Surprise sr ("the result of " ++ name) (an $ SomeType resultTy) (Expected $ an ty))
 
-mkInvert, mkDark, mkLight :: TypedValue -> SourceRange -> TypedValue
-mkDark c sr = TypedValue $ \ty -> case ty of
+mkInvert, mkDark, mkLight :: ParsedValue -> SourceRange -> ParsedValue
+mkDark c sr = ParsedValue sr $ \ty -> case ty of
   ColorType -> Blend (Const $ Scalar RealType 0.333) (Const $ Scalar ColorType black)
                <$> atType c ColorType
-  _ -> typeError sr ty "a darkening operation" "color"
+  _ -> throwError (Surprise sr "the result of a darkening operation" "a color" (Expected $ an ty))
 
-mkLight c sr = TypedValue $ \ty -> case ty of
+mkLight c sr = ParsedValue sr $ \ty -> case ty of
   ColorType -> Blend (Const $ Scalar RealType 0.333) (Const $ Scalar ColorType white)
                <$> atType c ColorType
-  _ -> typeError sr ty "a lightening operation" "color"
+  _ -> throwError (Surprise sr "the result of a lightening operation" "a color" (Expected $ an ty))
 
-mkInvert c sr = TypedValue $ \ty -> case ty of
+mkInvert c sr = ParsedValue sr $ \ty -> case ty of
   ColorType -> InvertRGB <$> atType c ColorType
-  _ -> typeError sr ty "a color inversion operation" "color"
+  _ -> throwError (Surprise sr "the result of a color inversion" "a color" (Expected $ an ty))
 
-mkBlend, mkCycle, mkRGB :: TypedValue -> TypedValue -> TypedValue -> SourceRange -> TypedValue
-mkBlend t c1 c2 sr = TypedValue $ \ty -> case ty of
+mkBlend, mkCycle, mkRGB :: ParsedValue -> ParsedValue -> ParsedValue -> SourceRange -> ParsedValue
+mkBlend t c1 c2 sr = ParsedValue sr $ \ty -> case ty of
   ColorType -> Blend <$> atType t RealType
                      <*> atType c1 ColorType
                      <*> atType c2 ColorType
-  _ -> typeError sr ty "a blend operation" "color"
+  _ -> throwError (Surprise sr "the result of a blend operation" "a color" (Expected $ an ty))
 
-mkCycle t c1 c2 sr = TypedValue $ \ty -> case ty of
+mkCycle t c1 c2 sr = ParsedValue sr $ \ty -> case ty of
   ColorType -> do
     let argName = Proxy @"#cycle-arg"
 
         go :: forall env. KnownEnvironment env
            => NameIsAbsent "#cycle-arg" env
-           -> Errs (Value '(env, 'ColorT))
+           -> TC (Value '(env, 'ColorT))
         go pf = recallIsAbsent pf $ do
           argVal <- ModF <$> atType t RealType
                          <*> pure (Const (Scalar RealType 1))
@@ -527,30 +497,27 @@ mkCycle t c1 c2 sr = TypedValue $ \ty -> case ty of
           pure (LocalLet argName RealType pf argVal ColorType blend)
 
     case lookupEnv' argName (envProxy Proxy) of
-      Found' {} -> Errs $ Left ["Internal error, #cycle-arg already defined"]
+      Found' {} -> throwError (internal $ AlreadyDefined sr (symbolVal argName))
       Absent' pf -> go pf
 
-  _ -> typeError sr ty "a cyclic blend operation" "color"
+  _ -> throwError (Surprise sr "the result of a cyclic blend operation" "a color" (Expected $ an ty))
 
-mkRGB r g b sr = TypedValue $ \ty -> case ty of
+mkRGB r g b sr = ParsedValue sr $ \ty -> case ty of
   ColorType -> RGB <$> atType r RealType
                    <*> atType g RealType
                    <*> atType b RealType
-  _ -> typeError sr ty "an RGB value" "color"
+  _ -> throwError (Surprise sr "an RGB value" "a color" (Expected $ an ty))
 
-mkList :: [TypedValue] -> SourceRange -> TypedValue
-mkList xs sr = TypedValue $ \ty -> case ty of
-  ListType ity -> List ity <$> traverse (`atType` ity) xs
-  _ -> typeError sr ty "a list with items" "some list"
+mkList :: [ParsedValue] -> SourceRange -> ParsedValue
+mkList xs sr = ParsedValue sr $ \ty -> case ty of
+  ListType ity -> List ity <$> traverse (\x -> atType x ity) xs
+  _ -> throwError (Surprise sr "a list literal" "some kind of list" (Expected $ an ty))
 
-mkMod :: TypedValue -> TypedValue -> SourceRange -> TypedValue
-mkMod x y sr = TypedValue $ \ty -> case ty of
+mkMod :: ParsedValue -> ParsedValue -> SourceRange -> ParsedValue
+mkMod x y sr = ParsedValue sr $ \ty -> case ty of
   IntegerType -> ModI <$> atType x IntegerType <*> atType y IntegerType
-  RealType    -> (I2R <$> (ModI <$> atType x IntegerType <*> atType y IntegerType)) <|>
-                 (ModF <$> atType x RealType <*> atType y RealType)
-  ComplexType -> (R2C . I2R <$> (ModI <$> atType x IntegerType <*> atType y IntegerType)) <|>
-                 (R2C <$> (ModF <$> atType x RealType <*> atType y RealType))
-  _ -> typeError sr ty "a modulo operation" "ℝ or ℤ"
+  RealType    -> ModF <$> atType x RealType <*> atType y RealType
+  _ -> throwError (Surprise sr "the result of a modulo operation" "an integer or real number" (Expected $ an (SomeType ty)))
 
 colors :: Map String Color
 colors = Map.fromList
@@ -619,7 +586,7 @@ types = Map.fromList
   , ("Color", ColorT)
   ]
 
-typeGrammar :: forall r. Grammar r (ProdSR r String FSType)
+typeGrammar :: forall r. Grammar r (Prod r FSType)
 typeGrammar = mdo
 
   toplevel <- ruleChoice

@@ -9,6 +9,7 @@ import Actor.Layout
 import Language.Type
 import Language.Environment
 import Language.Value.Parser
+import Language.Parser
 import qualified Data.Map as Map
 
 import Data.Aeson
@@ -56,8 +57,8 @@ getConfigurationSplices Configuration{..}
       [x] -> pure x
       _   -> fail ("duplicate splices")
 
-    getSplice :: ConfigVar -> m (String, TypedValue)
+    getSplice :: ConfigVar -> m (String, ParsedValue)
     getSplice (ConfigVar valStr (SomeType _ty) _envMap name) = do
-      case parseTypedValue Map.empty valStr of
-        Left e -> fail e
+      case parseParsedValue Map.empty valStr of
+        Left e -> fail (ppFullError (Left e) valStr)
         Right v -> pure (name, v)
