@@ -14,6 +14,7 @@ import qualified Graphics.UI.WX as WX
 import           Graphics.UI.WXCore.WxcClassesAL
 import           Graphics.UI.WXCore.WxcClassesMZ
 import           Graphics.UI.WXCore.WxcDefs
+import Graphics.UI.WXCore.Frame (windowGetScreenPosition)
 
 generateWxLayout :: Dynamic dyn
                  => Window a
@@ -123,7 +124,7 @@ generateWxLayout frame0 wLayout = do
                  set errorPopup [ visible := False ]
                Just err -> do
                  set te [ bgcolor := rgb 180 80 (80 :: Int)]
-                 Point wx wy <- getPosition te
+                 Point wx wy <- windowGetScreenPosition te
                  set txt [ text := err ]
                  set skipNextFocusLoss [ value := True ]
                  set skipNextFocusGain [ value := True ]
@@ -162,12 +163,3 @@ generateWxLayout frame0 wLayout = do
               ]
        listenWith v (\_ newText -> set te [ text := newText ])
        pure (fill $ row 5 [ margin 3 (label lab), hfill (widget te) ])
-
-getPosition :: Window a -> IO Point
-getPosition p
-  | objectIsNull p = pure (Point 0 0)
-  | otherwise = do
-      Point x y <- get p position
-      p' <- get p WX.parent
-      Point x' y' <- getPosition p'
-      pure (Point (x + x') (y + y'))

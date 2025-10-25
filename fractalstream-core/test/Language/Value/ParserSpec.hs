@@ -192,9 +192,11 @@ spec = do
       let parses1 = parseI1 "if (pi = x) then 1 else 0"
           parses2 = parseI1 "if (x = pi) then 1 else 0"
           parses3 = parseCR "x + y i"
+          parses4 = pprint <$> parseValue endOfDecls RealType "1 + 2"
       parses1 0 `shouldBe` Right 0
       parses2 0 `shouldBe` Right 0
       parses3 1 2 `shouldBe` Right (1 :+ 2)
+      parses4 `shouldBe` Right "(1 + 2):R"
 
   describe "when parsing boolean-valued operations" $ do
     let env = declare @"x" IntegerType

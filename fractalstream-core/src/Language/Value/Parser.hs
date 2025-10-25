@@ -262,8 +262,8 @@ valueGrammar splices = mdo
 
   color <- ruleChoice
     [ check (
-        fmap (\c -> tcScalar (show c) ColorType c) . tokenMatch $ \case
-            Identifier n -> Map.lookup n colors
+        fmap (\(n,c) -> tcScalar n ColorType c) . tokenMatch $ \case
+            Identifier n -> ("`" ++ n ++ "`",) <$> Map.lookup n colors
             _ -> Nothing)
 
     , check (tcDark <$> (token (Identifier "dark") *> atom))
