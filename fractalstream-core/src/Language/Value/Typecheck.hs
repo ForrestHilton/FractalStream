@@ -411,7 +411,7 @@ tcAppend plst px sr = \case
   ListType ty -> do
     lst <- plst `atType` ListType ty
     x <- px `atType` ty
-    pure (Join ty [List ty [x], lst])
+    pure (Join ty [lst, List ty [x]])
   ty -> throwError (Surprise sr "the result of an append operation" "some list type" (Expected $ an ty))
 
 tcPrepend :: ParsedValue -> ParsedValue -> CheckedValue
@@ -419,7 +419,7 @@ tcPrepend plst px sr = \case
   ListType ty -> do
     lst <- plst `atType` ListType ty
     x <- px `atType` ty
-    pure (Join ty [lst, List ty [x]])
+    pure (Join ty [List ty [x], lst])
   ty -> throwError (Surprise sr "the result of an prepend operation" "some list type" (Expected $ an ty))
 
 tcRemove :: ParsedValue -> String -> ParsedValue -> CheckedValue

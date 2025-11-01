@@ -165,7 +165,7 @@ evaluator v0 ctx = case v0 of
     ModF x y ->
       let y' = y ctx
           m = fmod (x ctx) (y ctx)
-      in if m < y' then m + y' else m
+      in if m < 0 then m + y' else m
 
     PowF x n -> x ctx ** n ctx
     AbsF x   -> abs (x ctx)

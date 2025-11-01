@@ -4,6 +4,7 @@ viewers:
     size: 512x512
     resizable: false
     z-coord: z
+    pixel-size: px
     initial-center: 0
     iteration-limit: max_iters
     initial-pixel-size: 1/128
@@ -33,10 +34,9 @@ viewers:
               star1 : C <- e^{2 pi i h1 / q}
               star2 : C <- e^{2 pi i h2 / q}
               draw line from star1 to star2
-              use red for line
+              use black for line
               write "A" at i star2 / 2
               write "B" at -i star2 / 2
-              use black for line
 
               # Brent's cycle detection algorithm
               power : Z <- 1
@@ -70,7 +70,7 @@ viewers:
               # We'll track the kneading sequence in a computing-friendly
               # form here, while also accumulating a human-friendly form
               # into `kneading_seq`
-              iters : List of Z <- []
+              iters <- []
               S1 : Z <- 0
               S2 : Z <- 1
               A  : Z <- 2
@@ -131,6 +131,9 @@ viewers:
 
               kneading_seq <- text (kneading_seq, "]")
 
+              spider <- []
+              spider_ready <- false
+
               p <- savedP
               q <- savedQ
 
@@ -145,25 +148,28 @@ viewers:
     code: "color <- white"
 
     tools:
-      - name: Reset
+      - name: Reset spider
         shortcut: r
+        configuration:
+          title: Spider map
+          size: 400x200
+          button: "Apply spider map"
+
         actions:
+          - event: refresh
+            code: |
+              if not spider_ready:
+                erase
+
           - event: activated
             code: |
               erase
+              spider <- []
               next_leg : Z <- 0
-              spider : List of List of Z <- []
-              R : R <- 5
+              R : R <- 10
 
-              # Find the linear transformation that moves the first
-              # foot of the standard spider to -2 and the second foot
-              # to 0.
-              f0 : C <- e^{2 pi i p / q}
-              f1 : C <- e^{4 pi i p / q}
-
-              # z -> -2 (z - f1) / (f0 - f1)
-              m : C <- -2 / (f0 - f1)
-              b : C <- 2 f1 / (f0 - f1)
+              # Move the first foot of the spider to 0
+              b : C <- -e^{2 pi i p / q}
 
               # Subdivide the legs of the standard spider, then twist
               omega : C <- e^{2 pi i p / q}
@@ -171,11 +177,10 @@ viewers:
               delta : R <- 1 / (λ + μ)
               ci : R <- 0
 
-              leg : Z <- 0
-              leg1 : List of C <- []
+              leg : List of C <- []
 
               while true up to μ + λ times:
-                z <- m omega + b
+                zi : C <- omega + b
 
                 c : Color <- rainbow(ci)
                 ci <- ci + delta
@@ -184,44 +189,302 @@ viewers:
 
                 # Make a curve from R omega to z
                 t : R <- 0
-                dt : R <- 1 / 100
+                N : Z <- 100
+                dt : R <- 1 / N
                 last_gamma : C <- R omega
                 draw line from 20 omega to last_gamma
-                while true up to 100 times:
+                leg <- []
+                while true up to N times:
                   t <- t + dt
-                  mt : C <- m^t
-                  bt : C <- b t
-                  gamma : C <- mt R^{1 - t} omega + bt
-                  if leg = 1:
-                    leg1 <- prepend(leg1, gamma)
+                  gamma : C <- R^{1 - t} omega + b t
+                  leg <- prepend(leg, last_gamma)
                   draw line from last_gamma to gamma
                   last_gamma <- gamma
 
-                draw filled circle at z with radius foot
+                draw filled circle at zi with radius foot
                 omega <- omega^2
-                leg <- leg + 1
+
+                spider <- append(spider, leg)
 
               # Reset omega
               omega <- e^{2 pi i p / q}
 
-              z2 : C <- m omega^3 + b
+              z2 : C <- omega^2 + b
               # P(z) = z2 (1 + z/2)^2
               # -2 +/- 2 sqrt (w / z2)
-              last_gamma : C <- -2
+              leg1 : List of C <- spider @ 1
+              last_gamma : C <- leg1 @ 1
               use light grey for line
+
+              # Construct the inverse image of \gamma_1 under
+              # $P(z) = z_2 (1 - z/2)^2$. Since
+              # \gamma_1 starts at z_1 = 0 and 0 is the critical
+              # value of $P$, the inverse image of \gamma_1 is
+              # a curve that splits \hat{C} in half, passing through
+              # infinity and -2. We'll just compute a hopefully-big-
+              # enough portion of P^{-1}(\gamma_1) and then complete
+              # it into a contour by adding rectangular edges, like
+              # this:
+              #   ____________________________________
+              #   \                                   |
+              #    \__                                |
+              #       \                               |
+              #        \______________________________|
+              #
+              contour <- []
+
+              # Compute the first half of P^{-1}(\gamma_1)
               last_pre : C <- -2 + 2 sqrt(last_gamma / z2)
-              for each pt in leg1:
-                pre : C <- -2 + 2 sqrt(pt / z2)
-                draw line from last_pre to pre
-                last_pre <- pre
-              last_pre <- -2 - 2 sqrt(last_gamma / z2)
               for each pt in leg1:
                 pre1 : C <- -2 + 2 sqrt(pt / z2)
                 pre2 : C <- -2 - 2 sqrt(pt / z2)
-                pre : C <- if |pre1 - last_pre| < |pre2 - last_pre| then pre1 else pre2
-                draw line from last_pre to pre
+                pre : C <- if |pre1 - last_pre| < |pre2 - last_pre| ...
+                  then pre1 else pre2
+                contour <- prepend(contour, pre)
                 last_pre <- pre
 
+              # Compute the second half of P^{-1}(\gamma_1)
+              last_pre <- -2 - 2 sqrt(last_gamma / z2)
+              t : R <- 0
+
+              for each pt in leg1:
+                pre1 : C <- -2 + 2 sqrt(pt / z2)
+                pre2 : C <- -2 - 2 sqrt(pt / z2)
+                pre : C <- if |pre1 - last_pre| < |pre2 - last_pre| ...
+                  then pre1 else pre2
+                contour <- append(contour, pre)
+                last_pre <- pre
+
+              first_pt : C <- contour @ 1
+              last_pt : C <- contour @ 200
+              contour <- join(contour, ...
+                [10 + i im last_pt, 10 + i im first_pt, first_pt])
+
+              # Draw the contour in grey, with -2 marked
+              use light grey for line
+              t <- 0
+              first : Boolean <- true
+              for each pt in contour:
+                if first:
+                  first <- false
+                  first_pt <- pt
+                else:
+                  t <- t + 0.005
+                  draw line from pt to last_pt
+                last_pt <- pt
+
+              # Determine if the contour encloses 0 or not
+              lastPt : C <- 0
+              first <- true
+              integral : C <- 0
+              for each pt in contour:
+                if first:
+                  first <- false
+                else:
+                  dz : C <- pt - lastPt
+                  integral <- integral + dz / lastPt
+                lastPt <- pt
+              encloses_zero <- im integral > 0
+
+              # Pull each path back
+              use light grey for fill
+              draw point at -2
+              write "-2" at -2.2
+              write "γ" at first_pt - 0.15i
+
+              spider_ready <- true
+
+          - event: button
+            label: "Apply spider map"
+            code: |
+              erase
+
+              new_spider : List of List of C <- []
+              z_2 : C <- (spider @ 2) @ 1
+
+              j : Z <- 1
+              while true up to μ + λ times:
+                # To compute \tilde{z}_j and \tilde{\gamma}_j,
+                # we need to pick one of the two preimages of
+                # z_{j+1} and \gamma_{j+1} under P(z) = z_2 (1 - z/2)^2
+                #
+                gamma_jp1 : List of C <- spider @@ (j + 1)
+                z_jp1 : C <- gamma_jp1 @ 1
+
+                # See which preimage -2 +/- 2 sqrt(z_{j+1} / z_2) is
+                # inside the contour
+                w : C <- -2 + 2 sqrt(z_jp1 / z_2)
+
+                integral : C <- 0
+                last_zeta : C <- 0
+                first : Boolean <- true
+                for each zeta in contour:
+                  if first:
+                    first <- false
+                  else:
+                    dzeta : C <- zeta - last_zeta
+                    integral <- integral + dzeta / (zeta - w)
+
+                zero_winding : Z <- if encloses_zero then 1 else -1
+                sqrt_sign : Z <- if im integral > 0 then 1 else -1
+
+                if j = 1:
+                  use black for line
+                  write text("w: ", w) at 1
+                  write text("zero_winding: ", zero_winding) at 1 - 0.3 i
+                  write text("sqrt_sign: ", sqrt_sign) at 1 - 0.6 i
+
+                # Determine if we should pick the preimage inside or outside
+                # the contour based on the jth term of the kneading sequence.
+                # If it was A, pick the preimage with sqrt_sign. If it was
+                # B, pick the preimage with negated sqrt_sign.
+                # TODO: deal with *s in the kneading sequence
+                S1 : Z <- 0
+                S2 : Z <- 1
+                A  : Z <- 2
+                B  : Z <- 3
+                symbol : Z <- iters @ j
+                last_pre : C <- 0
+                if symbol = A:
+                  last_pre <- -2 + 2 sqrt_sign zero_winding sqrt(z_jp1 / z_2)
+                else if symbol = B:
+                  last_pre <- -2 - 2 sqrt_sign zero_winding sqrt(z_jp1 / z_2)
+
+                if j = 1:
+                  write text ("last_pre: ", last_pre) at 1 - 0.9 i
+
+                # Try to rescale the new spider so that it is roughly
+                # the same size as the old one
+                scale : R <- sqrt(10)
+
+                new_leg : List of C <- [scale last_pre]
+                first <- true
+                for each pt in gamma_jp1:
+                  if first:
+                    first <- false
+                  else:
+                    pre1 : C <- -2 + 2 sqrt(pt / z_2)
+                    pre2 : C <- -2 - 2 sqrt(pt / z_2)
+                    pre : C <- if |last_pre - pre1| < |last_pre - pre2| ...
+                      then pre1 else pre2
+                    new_leg <- append(new_leg, scale pre)
+                    last_pre <- pre
+
+                # Add one more segment to the leg so that we reach at least
+                # radius 10
+                if |last_pre| < 10:
+                  new_leg <- append(new_leg, scale 10 last_pre / |last_pre|)
+                new_spider <- append(new_spider, new_leg)
+                j <- j + 1
+
+              spider <- new_spider
+              # Now redraw the spider
+
+              delta : R <- 1 / (λ + μ)
+              ci : R <- 0
+
+              for each leg in spider:
+                c : Color <- rainbow(ci)
+                ci <- ci + delta
+                use dark c for line
+                use light c for fill
+
+                z_j : C <- leg @ 1
+                last_pt : C <- z_j
+                for each pt in leg:
+                  draw line from last_pt to pt
+                  last_pt <- pt
+                draw filled circle at z_j with radius foot
+
+              # Recompute the contour \gamma
+              leg1 : List of C <- spider @ 1
+              last_gamma : C <- leg1 @ 2
+              use light grey for line
+              z2 : C <- (spider @ 2) @ 1
+
+              # Construct the inverse image of \gamma_1 under
+              # $P(z) = z_2 (1 - z/2)^2$. Since
+              # \gamma_1 starts at z_1 = 0 and 0 is the critical
+              # value of $P$, the inverse image of \gamma_1 is
+              # a curve that splits \hat{C} in half, passing through
+              # infinity and -2. We'll just compute a hopefully-big-
+              # enough portion of P^{-1}(\gamma_1) and then complete
+              # it into a contour by adding rectangular edges, like
+              # this:
+              #   ____________________________________
+              #   \                                   |
+              #    \__                                |
+              #       \                               |
+              #        \______________________________|
+              #
+              contour <- [-2]
+
+              # Compute the first half of P^{-1}(\gamma_1)
+              last_pre : C <- -2 + 2 sqrt(last_gamma / z2)
+              first : Boolean <- true
+              for each pt in leg1:
+                if first:
+                  first <- false
+                else:
+                  pre1 : C <- -2 + 2 sqrt(pt / z2)
+                  pre2 : C <- -2 - 2 sqrt(pt / z2)
+                  pre : C <- if |pre1 - last_pre| < |pre2 - last_pre| ...
+                    then pre1 else pre2
+                  contour <- prepend(contour, pre)
+                  last_pre <- pre
+
+              # Compute the second half of P^{-1}(\gamma_1)
+              last_pre <- -2 - 2 sqrt(last_gamma / z2)
+              t : R <- 0
+
+              first <- true
+              for each pt in leg1:
+                if first:
+                  first <- false
+                else:
+                  pre1 : C <- -2 + 2 sqrt(pt / z2)
+                  pre2 : C <- -2 - 2 sqrt(pt / z2)
+                  pre : C <- if |pre1 - last_pre| < |pre2 - last_pre| ...
+                    then pre1 else pre2
+                  contour <- append(contour, pre)
+                  last_pre <- pre
+
+              first_pt : C <- contour @ 1
+              last_pt : C <- contour @ -1
+              contour <- join(contour, ...
+                [10 + i im last_pt, 10 + i im first_pt, first_pt])
+
+              # Draw the contour in grey, with -2 marked
+              use light grey for line
+              t <- 0
+              first <- true
+              for each pt in contour:
+                if first:
+                  first <- false
+                  first_pt <- pt
+                else:
+                  t <- t + 0.005
+                  draw line from pt to last_pt
+                last_pt <- pt
+
+              # Determine if the contour encloses 0 or not
+              lastPt : C <- 0
+              first <- true
+              integral : C <- 0
+              for each pt in contour:
+                if first:
+                  first <- false
+                else:
+                  dz : C <- pt - lastPt
+                  integral <- integral + dz / lastPt
+                lastPt <- pt
+              encloses_zero <- im integral > 0
+
+              # Pull each path back
+              use light grey for fill
+              draw point at -2
+              write "-2" at -2.2
+              write "γ" at first_pt - 0.15i
 
 configuration:
   title: Configuration
@@ -257,6 +520,11 @@ configuration:
               value: "42"
               type: Text
               variable: kneading_seq
+          - text-entry:
+              label: "Kneading sequence for the script's eyes only:"
+              value: ""
+              type: List of Z
+              variable: iters
           - horizontal-contents:
               - text-entry:
                   label: Preperiod
@@ -268,7 +536,24 @@ configuration:
                   value: "0"
                   type: Z
                   variable: λ
-
+    - text-entry:
+        label: Current spider representative
+        value: ""
+        type: List of List of C
+        variable: spider
+    - checkbox:
+        label: Spider representative ready?
+        value: false
+        variable: spider_ready
+    - text-entry:
+        label: γ =
+        value: ""
+        type: List of C
+        variable: contour
+    - checkbox:
+        label: Encloses 0?
+        value: false
+        variable: encloses_zero
     - text-entry:
         label: "Max. iterations:"
         value: "1000"

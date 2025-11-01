@@ -9,8 +9,8 @@ viewer:
   initial-center: 0
   initial-pixel-size: 1/128
   code: |
-      x : ℝ <- if re w >= 0 then mod(re w, size) else size - mod(-re w, size)
-      y : ℝ <- if im w >= 0 then mod(im w, size) else size - mod(-im w, size)
+      x : ℝ <- mod(re w, size)
+      y : ℝ <- mod(im w, size)
 
       C : ℂ ⭠ w - (x + i y) + (1 + i) size / 2
       z : ℂ ⭠ (x + i y - (1 + i) size / 2) * scale / size
@@ -21,7 +21,7 @@ viewer:
         color ⭠ black
       else:
         m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log R)) / log 2
-        color ⭠ blend (2 arctan (m / 20) / pi, dark blue, white)
+        color ⭠ rainbow(m / 20) #blend (2 arctan (m / 20) / pi, dark blue, white)
 
 configuration:
   title: Configuration
