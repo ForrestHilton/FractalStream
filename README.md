@@ -4,7 +4,7 @@ This is an updated version of FractalStream written in Haskell for cross-platfor
 
 # Pictures
 
-![Julia Set](./Julia.png)   ![Mandelbrot Set](./Mandelbrot.png)
+![Julia Set](./examples/pictures/Julia.png)   ![Mandelbrot Set](./examples/pictures/Mandelbrot.png)
 
 # Features
 - Mandelbrot zoom
