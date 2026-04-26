@@ -1,8 +1,5 @@
 {-# language LambdaCase #-}
 import Distribution.MacOSX
-import Distribution.AppImage
-import qualified Distribution.MacOSX as Mac
-import qualified Distribution.AppImage as Linux
 import Distribution.Simple
 import Distribution.Simple.Setup (ConfigFlags(..))
 import Distribution.PackageDescription hiding (updatePackageDescription)
@@ -16,46 +13,38 @@ import Data.List (isSuffixOf)
 main :: IO ()
 main = do
   defaultMainWithHooks $ simpleUserHooks
-    { postBuild = \args buildFlags packageDesc localBuildInfo -> do
-        appBundleBuildHook [macApp]   args buildFlags packageDesc localBuildInfo
-        appImageBuildHook  [linuxApp] args buildFlags packageDesc localBuildInfo
+    { postBuild = appBundleBuildHook guiApps -- no-op if not MacOS X
     , confHook = fsConfHook
     }
 
-linuxApp :: AppImage
-linuxApp = AppImage
-  { Linux.appName = "FractalStream"
-  , Linux.appDesktop = "FractalStream.desktop"
-  , Linux.appIcons = ["FS_64x64x32.png", "FS_128x128x32.png", "FS_256x256x32.png"]
-  , Linux.appResources = []
-  , Linux.appDirCustomize = Nothing
-  }
+guiApps :: [MacApp]
+guiApps = [MacApp "FractalStream"
 
-macApp :: MacApp
-macApp = MacApp "FractalStream"
-  -- Icon file
-  (Just "FS.icns")
+                  -- Icon file
+                  (Just "FS.icns")
 
-  -- Info.plist
-  (Just "../macos/Info.plist")
+                  -- Info.plist
+                  (Just "../macos/Info.plist")
 
-  -- Other resource files
-  []
+                  -- Other resource files
+                  []
 
-  -- Other binary files
-  []
+                  -- Other binary files
+                  []
 
-  -- Starting in Big Sur, MacOS caches certain
-  -- system libraries. They act like they are present
-  -- when using dlopen but do not actually exist on
-  -- disk at the stated locations! This throws off
-  -- `ChaseWithDefaults` when it uses otool -L to find
-  -- dylib dependencies. We'll work around it by exlcuding
-  -- /usr/lib, where these libraries claim to be installed.
-  --
-  -- See: https://developer.apple.com/forums/thread/655588
-  --
-  (ChaseWith $ defaultExclusions ++ ["/usr/lib"])
+                  -- Starting in Big Sur, MacOS caches certain
+                  -- system libraries. They act like they are present
+                  -- when using dlopen but do not actually exist on
+                  -- disk at the stated locations! This throws off
+                  -- `ChaseWithDefaults` when it uses otool -L to find
+                  -- dylib dependencies. We'll work around it by exlcuding
+                  -- /usr/lib, where these libraries claim to be installed.
+                  --
+                  -- See: https://developer.apple.com/forums/thread/655588
+                  --
+                  (ChaseWith $ defaultExclusions ++ ["/usr/lib"])
+          ]
+
 
 fsConfHook :: (GenericPackageDescription, HookedBuildInfo)
            -> ConfigFlags
