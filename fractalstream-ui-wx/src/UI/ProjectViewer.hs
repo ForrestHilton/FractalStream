@@ -534,14 +534,10 @@ makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow confi
                 gc <- graphicsContextCreate dc
                 newModel <- get model value
                 let midModel = interpolateModel t oldModel newModel
-                    withLayer (opacity :: Double) action = do
-                      graphicsContextBeginLayer gc opacity
+                    withLayer (_ :: Double) action = do
                       action
-                      graphicsContextEndLayer gc
                     restoringContext action = do
-                      graphicsContextPushState gc
                       action
-                      graphicsContextPopState gc
 
                 let zoom :: (Double, Double) -> (Double, Double) -> IO () -> IO ()
                     zoom (scaleX, scaleY) (cx, cy) action = do
