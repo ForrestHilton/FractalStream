@@ -95,6 +95,7 @@ viewProject projectWindow addMenuBar saveSession = UI
       set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ]
             , on closing :~ (>> stopListening) ]
       windowReLayout f
+      putStrLn $ getDynamic saveSession
       pure (windowShow f >> windowRaise f)
 
   , makeViewer = const (makeWxComplexViewer projectWindow addMenuBar saveSession)
@@ -416,6 +417,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow confi
 
     let getRenderAction = case vCodeWithArgs of
           CodeWithArgs vGetArgs _ vCode -> do
+            putStrLn "here3"
             vGetArgs >>= \case
               Left err   -> do
                 set warningPanel [ visible := True ]
@@ -423,6 +425,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow confi
                 readMVar lastRenderAction
               Right vaArgs -> do
                 set warningPanel [ visible := False ]
+                putStrLn $ ppDynamic vCode
                 ViewerFunction vf <- getDynamic vCode
                 let action = \(w :: Word32) (h :: Word32) (subsamples :: Word32) (dx :+ dy) (x :+ y) vaBuffer -> do
                       let vaWidth  = fromIntegral w

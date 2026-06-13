@@ -197,6 +197,7 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
     getDynamic cvCode >>= \case
 
       Left (_, err) -> do
+        putStrLn "here2"
         let vTools = dyn cvTools
             vCodeWithArgs = CodeWithArgs (pure $ Right EmptyContext) Nothing (pure allGrey)
             vListen = const (pure $ pure ())
@@ -205,6 +206,7 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
         void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}
 
       Right (SomeViewerWithContext context mprep code) -> do
+        putStrLn "here1"
 
         let env = contextToEnv context
             prepUsedVars = case mprep of

@@ -76,9 +76,11 @@ main = withBackend $ \complexViewerCompiler -> start $ do
         let sessionSave = save prj projectWindow sessionUnsaved
         let si = SessionInfo{..}
         modifyValue activeSessions (si :)
-        runEnsembleFromSetup complexViewerCompiler
-            (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}) sessionSave)
-            prj
+        let v1 = (objectCast projectWindow)
+        let v2 = (viewProject v1 
+                  (makeMenuBar ProjectActions{..}) -- this line shows the window where it is edited.
+                  sessionSave) 
+        runEnsembleFromSetup complexViewerCompiler v2 prj
 
       projectEdit = editProject
 
