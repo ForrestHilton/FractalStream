@@ -18,7 +18,6 @@ module Backend.LLVM.Operand
   ) where
 
 import FractalStream.Prelude
-
 import Language.Type
 import Language.Value
 
@@ -34,7 +33,7 @@ import LLVM.IRBuilder.Constant
 import LLVM.AST.Operand hiding (local)
 
 data OperandPtr :: Symbol -> FSType -> Exp *
-type instance Eval (OperandPtr name t) = PtrOp t
+type instance Eval (OperandPtr name_ t) = PtrOp t
 
 data PtrOp_ :: (Environment, FSType) -> Exp *
 type instance Eval (PtrOp_ et) = PtrOp (Ty et)
