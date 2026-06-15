@@ -95,7 +95,6 @@ viewProject projectWindow addMenuBar saveSession = UI
       set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ]
             , on closing :~ (>> stopListening) ]
       windowReLayout f
-      putStrLn $ getDynamic saveSession
       pure (windowShow f >> windowRaise f)
 
   , makeViewer = const (makeWxComplexViewer projectWindow addMenuBar saveSession)
