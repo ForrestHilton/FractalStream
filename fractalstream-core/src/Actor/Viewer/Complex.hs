@@ -178,43 +178,46 @@ instance CodecWith ScriptDependencies ComplexViewer where
                     assertAbsentViewerArgs e action =
                       fromMaybe (Left "Internal error") (assertMissingViewerArgs e action)
 
-                vc :: Either String (ViewerContext combinedEnv) <- withEnvironment env $
-                  (fromMaybe (pure $ Left "Internal error") . assertMissingViewerArgs env) $
-                  runExceptT $ do
-                  vcCoord <- ExceptT (dyn $ use coord)
+                vc :: Either String (ViewerContext combinedEnv) <- withEnvironment env $ do
+                  let attempt =
+                        runExceptT $ do
+                          vcCoord <- ExceptT (dyn $ use coord)
+                          vcIterLimit <- ExceptT $ (dyn $ use iter) <&> \case
+                            Left err -> Left err
+                            Right Nothing -> Right Nothing
+                            Right (Just pv) -> assertAbsentViewerArgs env $ do
+                              case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
+                                Absent pf -> recallIsAbsent pf $
+                                  case lookupEnv (Proxy @InternalEscapeRadius) RealType env of
+                                    Absent pf' -> recallIsAbsent pf' $ case pv `atType` IntegerType of
+                                      TC (Left err) -> Left ("Error with internal iteration limit: " ++ ppError err)
+                                      TC (Right x)  -> pure (Just x)
+                                    _ -> Left "Internal error"
+                                _ -> Left "Internal error"
 
-                  vcIterLimit <- ExceptT $ (dyn $ use iter) <&> \case
-                    Left err -> Left err
-                    Right Nothing -> Right Nothing
-                    Right (Just pv) -> assertAbsentViewerArgs env $ do
-                      case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
-                        Absent pf -> recallIsAbsent pf $
-                          case lookupEnv (Proxy @InternalEscapeRadius) RealType env of
-                            Absent pf' -> recallIsAbsent pf' $ case pv `atType` IntegerType of
-                              TC (Left err) -> Left ("Error with internal iteration limit: " ++ ppError err)
-                              TC (Right x)  -> pure (Just x)
-                            _ -> Left "Internal error"
-                        _ -> Left "Internal error"
+                          vcEscapes <- ExceptT $ (dyn $ use esc) <&> \case
+                            Left err -> Left err
+                            Right Nothing -> Right Nothing
+                            Right (Just pv) -> assertAbsentViewerArgs env $ do
+                              case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
+                                Absent pf -> recallIsAbsent pf $ case pv `atType` RealType of
+                                  TC (Left err) -> Left ("Error with internal escape radius: " ++ ppError err)
+                                  TC (Right x)  -> pure (Just x)
+                                _ -> Left "Internal error"
 
-                  vcEscapes <- ExceptT $ (dyn $ use esc) <&> \case
-                    Left err -> Left err
-                    Right Nothing -> Right Nothing
-                    Right (Just pv) -> assertAbsentViewerArgs env $ do
-                      case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
-                        Absent pf -> recallIsAbsent pf $ case pv `atType` RealType of
-                          TC (Left err) -> Left ("Error with internal escape radius: " ++ ppError err)
-                          TC (Right x)  -> pure (Just x)
-                        _ -> Left "Internal error"
+                          vcVanishes <- ExceptT $ (dyn $ use van) <&> \case
+                            Left err -> Left err
+                            Right Nothing -> Right Nothing
+                            Right (Just pv) -> assertAbsentViewerArgs env $ do
+                              case pv `atType` RealType of
+                                TC (Left err) -> Left ("Error with internal vanishing radius: " ++ ppError err)
+                                TC (Right x)  -> pure (Just x)
+                          pure ViewerContext{..}
+                  case assertMissingViewerArgs env attempt of
+                    Just action -> action
+                    Nothing -> pure (Left "Internal error")
 
-                  vcVanishes <- ExceptT $ (dyn $ use van) <&> \case
-                    Left err -> Left err
-                    Right Nothing -> Right Nothing
-                    Right (Just pv) -> assertAbsentViewerArgs env $ do
-                      case pv `atType` RealType of
-                        TC (Left err) -> Left ("Error with internal vanishing radius: " ++ ppError err)
-                        TC (Right x)  -> pure (Just x)
 
-                  pure ViewerContext{..}
                 case vc of
                   Left err   -> complain err
                   Right args -> dyn (use pixel) >>= \case
