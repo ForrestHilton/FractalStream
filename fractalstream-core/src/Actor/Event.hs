@@ -354,9 +354,12 @@ withBookkeeping env splices (pMaxIters, pMaxRadius, pMinRadius) action = withEnv
     let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
           (env', code) & letInEnv (Const (Scalar typeProxy 0))
                        & letInEnv (Const (Scalar typeProxy False))
-    code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
-    code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
-    code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
+    pv1 <- pvAtType pMaxIters IntegerType env1
+    let (_, code1) = letInEnv pv1 (env0, code0)
+    pv2 <- pvAtType pMaxRadius RealType env2
+    let (_, code2) = letInEnv pv2 (env1, code1)
+    pv3 <- pvAtType pMinRadius RealType env3
+    let (_, code') = letInEnv pv3 (env2, code2)
     pure code'
 
 parseClickScript :: Splices
@@ -549,9 +552,12 @@ parseDragScript splices curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mp
       let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
             (env', code) & letInEnv (Const (Scalar typeProxy 0))
                          & letInEnv (Const (Scalar typeProxy False))
-      code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
-      code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
-      code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
+      pv1 <- pvAtType pMaxIters IntegerType env1
+      let (_, code1) = letInEnv pv1 (env0, code0)
+      pv2 <- pvAtType pMaxRadius RealType env2
+      let (_, code2) = letInEnv pv2 (env1, code1)
+      pv3 <- pvAtType pMinRadius RealType env3
+      let (_, code') = letInEnv pv3 (env2, code2)
       pure code'
 
 ------------------------------------------------------------
@@ -655,11 +661,14 @@ parseUnitScript splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx (CodeString 
 
         let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
               (env', code) & letInEnv (Const (Scalar typeProxy 0))
-                           & letInEnv (Const (Scalar typeProxy False))
+                          & letInEnv (Const (Scalar typeProxy False))
 
-        code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
-        code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
-        code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
+        pv1 <- pvAtType pMaxIters IntegerType env1
+        let (_, code1) = letInEnv pv1 (env0, code0)
+        pv2 <- pvAtType pMaxRadius RealType env2
+        let (_, code2) = letInEnv pv2 (env1, code1)
+        pv3 <- pvAtType pMinRadius RealType env3
+        let (_, code') = letInEnv pv3 (env2, code2)
 
         pure code'
 
